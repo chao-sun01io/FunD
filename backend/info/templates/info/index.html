@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tracked Funds</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container py-5">
+        <h1 class="mb-4">Tracked Funds</h1>
+        {% if funds %}
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th scope="col">Fund Code</th>
+                        <th scope="col">Fund Name</th>
+                        <th scope="col">Listing Exchange</th>
+                        <th scope="col">Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for fund in funds %}
+                    <tr>
+                        <td>{{ fund.fund_code }}</td>
+                        <td>{{ fund.fund_name }}</td>
+                        <td>{{ fund.listing_exchange }}</td>
+                        <td>
+                            <a href="{% url 'detail' fund.fund_code %}" class="btn btn-primary btn-sm">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="alert alert-info" role="alert">
+                No funds are currently being tracked.
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

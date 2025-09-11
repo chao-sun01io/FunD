@@ -1,0 +1,63 @@
+# <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+
+# Type should be one of the following:
+# * feat:     A new feature
+# * fix:      A bug fix
+# * docs:     Documentation only changes
+# * style:    Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
+# * refactor: A code change that neither fixes a bug nor adds a feature
+# * perf:     A code change that improves performance
+# * test:     Adding missing tests or correcting existing tests
+# * chore:    Changes to the build process or auxiliary tools and libraries such as documentation generation
+# * ci:       Changes to our CI configuration files and scripts
+# * build:    Changes that affect the build system or external dependencies
+# * revert:   Reverts a previous commit
+
+# Scope should be the area of the codebase affected (optional):
+# * backend:  Django backend changes
+# * frontend: Template/view changes
+# * config:   Configuration changes
+# * docker:   Docker-related changes
+# * celery:   Celery task changes
+# * redis:    Redis-related changes
+# * tests:    Test-related changes
+
+# Subject should be:
+# * imperative, present tense: "change" not "changed" nor "changes"
+# * no period at the end
+# * 50 characters or less
+# * capitalized first letter
+
+# Body should be:
+# * wrapped at 72 characters
+# * explain what and why vs. how
+# * can use multiple lines with "-" for bullet points
+
+# Footer should contain:
+# * any breaking changes
+# * reference issues that this commit closes, e.g. "Closes #123"
+
+# Examples:
+# feat(backend): add fund price tracking with Redis
+#
+# - Implement fetch_kweb_price Celery task
+# - Add Redis integration for storing latest quotes
+# - Update views to display real-time price data
+#
+# Closes #45
+
+# fix(templates): resolve price display formatting issues
+#
+# - Fix decimal precision for price values
+# - Add proper error handling for missing data
+# - Improve responsive design for mobile devices
+
+# docs(readme): update installation instructions
+#
+# - Add Docker Compose setup steps
+# - Include environment variable configuration
+# - Update Celery worker setup guide

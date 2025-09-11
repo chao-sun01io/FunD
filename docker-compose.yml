@@ -1,0 +1,39 @@
+services:
+  web:
+    build: ./backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/usr/src/app/
+    ports:
+      - 8000:8000
+    env_file: ./backend/.env
+    depends_on:
+      - redis
+
+  celery:
+    build: ./backend
+    command: celery --app=config worker --loglevel=info
+    volumes:
+      - ./backend:/usr/src/app
+    env_file: ./backend/.env
+    depends_on:
+      - web
+      - redis
+
+  celery-beat:
+    build: ./backend
+    command: celery --app=config beat --loglevel=info
+    volumes:
+      - ./backend:/usr/src/app
+    env_file: ./backend/.env
+    depends_on:
+      - web
+      - redis
+    restart: unless-stopped
+
+  redis:
+     image: redis:latest
+     # for local testing, map the port to 6380
+     # should not be used in production
+     ports:
+       - 6380:6379
