@@ -18,16 +18,27 @@ class FundBasicInfo(models.Model):
         return f"({self.fund_name}) ({self.fund_code})"
 
 class FundDailyData(models.Model):
+    '''
+    OCHLV + NAV + Estimated NAV
+    O: Opening Price
+    C: Closing Price
+    H: Highest Price
+    L: Lowest Price
+    V: Trading Volume
+    NAV: Net Asset Value
+    Estimated NAV: Estimated Net Asset Value (for ETFs)
+    '''
+    
     fund = models.ForeignKey(FundBasicInfo, on_delete=models.CASCADE)
     date = models.DateField()
-    opening_price = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
-    closing_price = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
-    highest_price = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
-    lowest_price = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
+    open = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
+    close = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
+    high = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
+    low = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
+    volume = models.BigIntegerField(blank=True, null=True)
     net_asset_value = models.DecimalField(max_digits=15, decimal_places=4, blank=True, null=True)
     estimated_nav = models.DecimalField(max_digits=15, decimal_places=4, blank=True, null=True)
     # Uncomment if needed
-    # trading_volume = models.BigIntegerField(blank=True, null=True)
     # turnover_rate = models.DecimalField(max_digits=5, decimal_places=4, blank=True, null=True)
     class Meta:
         unique_together = ('fund', 'date')

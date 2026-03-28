@@ -25,6 +25,8 @@ def detail(request, symbol):
         
         # Get latest price data from Redis
         redis_client = redis_conn.get_redis_conn()
+        if not redis_client:
+            return render(request, '404.html', status=404)
         latest_quote_key = f"info:{symbol.lower()}:latest_quote"
         latest_quote_raw = redis_client.get(latest_quote_key)
         
