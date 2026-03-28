@@ -4,10 +4,11 @@ WORKDIR /usr/src/app
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV UV_SYSTEM_PYTHON=1
 
-RUN pip install --upgrade pip
-COPY requirements.txt /usr/src/app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Copy the rest of the application code
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
 COPY . /usr/src/app

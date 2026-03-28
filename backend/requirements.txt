@@ -1,7 +1,0 @@
-django
-django-redis
-redis
-celery
-requests
-pandas_market_calendars
-pytest
