@@ -1,0 +1,66 @@
+[
+  {
+    "model": "info.fundbasicinfo",
+    "pk": 1,
+    "fields": {
+      "fund_code": "KWEB",
+      "fund_name": "KraneShares CSI China Internet ETF",
+      "fund_type": "ETF",
+      "currency": "USD",
+      "listing_exchange": "NYSE Arca",
+      "fund_company": "KraneShares",
+      "inception_date": "2013-07-31",
+      "index_tracked": "CSI Overseas China Internet Index",
+      "management_fee": "0.0069",
+      "custodian_fee": null
+    }
+  },
+  {
+    "model": "info.fundbasicinfo",
+    "pk": 2,
+    "fields": {
+      "fund_code": "XOP",
+      "fund_name": "SPDR S&P Oil & Gas Exploration & Production ETF",
+      "fund_type": "ETF",
+      "currency": "USD",
+      "listing_exchange": "NYSE Arca",
+      "fund_company": "State Street Global Advisors",
+      "inception_date": "2006-06-19",
+      "index_tracked": "S&P Oil & Gas E&P Select Industry Index",
+      "management_fee": "0.0035",
+      "custodian_fee": null
+    }
+  },
+  {
+    "model": "info.fundbasicinfo",
+    "pk": 3,
+    "fields": {
+      "fund_code": "164906",
+      "fund_name": "交银中证海外中国互联网ETF联接A",
+      "fund_type": "ETF联接基金",
+      "currency": "CNY",
+      "listing_exchange": "SZ",
+      "fund_company": "交银施罗德基金管理有限公司",
+      "inception_date": "2016-12-20",
+      "index_tracked": "CSI Overseas China Internet Index",
+      "management_fee": "0.0060",
+      "custodian_fee": "0.0010"
+    }
+  },
+  {
+    "model": "info.fundbasicinfo",
+    "pk": 4,
+    "fields": {
+      "fund_code": "162411",
+      "fund_name": "华宝标普石油天然气上游股票(LOF)",
+      "fund_type": "LOF",
+      "currency": "CNY",
+      "listing_exchange": "SZ",
+      "fund_company": "华宝基金管理有限责任公司",
+      "inception_date": "2016-06-29",
+      "index_tracked": "S&P Oil & Gas E&P Select Industry Index",
+      "management_fee": "0.0100",
+      "custodian_fee": "0.0020"
+    }
+  }
+]
