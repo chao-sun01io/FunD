@@ -362,8 +362,7 @@
         </div>
         {% endif %}
 
-        {% if daily_data %}
-        <div class="daily-data-section">
+        <div class="daily-data-section" id="daily-data-section">
             <h2>Recent Daily Data</h2>
             <div class="table-container">
                 <table class="daily-table">
@@ -375,68 +374,20 @@
                             <th>High</th>
                             <th>Low</th>
                             <th>NAV</th>
-                            <th>Est. NAV</th>
+                            <th>Volume</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {% for data in daily_data %}
-                        <tr>
-                            <td>{{ data.date|date:"M j, Y" }}</td>
-                            <td>{{ data.opening_price|floatformat:4|default:"-" }}</td>
-                            <td>{{ data.closing_price|floatformat:4|default:"-" }}</td>
-                            <td>{{ data.highest_price|floatformat:4|default:"-" }}</td>
-                            <td>{{ data.lowest_price|floatformat:4|default:"-" }}</td>
-                            <td>{{ data.net_asset_value|floatformat:4|default:"-" }}</td>
-                            <td>{{ data.estimated_nav|floatformat:4|default:"-" }}</td>
-                        </tr>
-                        {% endfor %}
+                    <tbody id="daily-data-tbody">
+                        <tr><td colspan="7" style="text-align:center;color:#999;">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
-        {% else %}
-        <div class="no-data-section">
-            <p>No daily data available for this fund.</p>
-        </div>
-        {% endif %}
 
         <a href="{% url 'index' %}" class="back-link">← Back to Fund List</a>
     </div>
 
     <script>
-        const sampleData = [
-            { date: '2025-02-17', close: 27.42, nav: 27.15, volume: 3800000 },
-            { date: '2025-02-18', close: 27.89, nav: 27.61, volume: 4200000 },
-            { date: '2025-02-19', close: 28.14, nav: 27.85, volume: 5100000 },
-            { date: '2025-02-20', close: 27.73, nav: 27.46, volume: 3600000 },
-            { date: '2025-02-21', close: 28.32, nav: 28.02, volume: 6700000 },
-            { date: '2025-02-24', close: 29.05, nav: 28.74, volume: 7200000 },
-            { date: '2025-02-25', close: 28.81, nav: 28.52, volume: 4900000 },
-            { date: '2025-02-26', close: 29.47, nav: 29.16, volume: 8100000 },
-            { date: '2025-02-27', close: 29.12, nav: 28.83, volume: 5500000 },
-            { date: '2025-02-28', close: 28.65, nav: 28.37, volume: 6300000 },
-            { date: '2025-03-03', close: 30.18, nav: 29.87, volume: 9400000 },
-            { date: '2025-03-04', close: 30.74, nav: 30.42, volume: 8800000 },
-            { date: '2025-03-05', close: 31.02, nav: 30.69, volume: 7600000 },
-            { date: '2025-03-06', close: 30.56, nav: 30.24, volume: 5200000 },
-            { date: '2025-03-07', close: 31.38, nav: 31.04, volume: 6900000 },
-            { date: '2025-03-10', close: 31.95, nav: 31.60, volume: 7400000 },
-            { date: '2025-03-11', close: 32.47, nav: 32.11, volume: 9200000 },
-            { date: '2025-03-12', close: 31.83, nav: 31.48, volume: 6100000 },
-            { date: '2025-03-13', close: 32.16, nav: 31.80, volume: 5800000 },
-            { date: '2025-03-14', close: 33.04, nav: 32.67, volume: 10300000 },
-            { date: '2025-03-17', close: 33.52, nav: 33.14, volume: 8500000 },
-            { date: '2025-03-18', close: 32.89, nav: 32.52, volume: 7100000 },
-            { date: '2025-03-19', close: 33.71, nav: 33.33, volume: 9600000 },
-            { date: '2025-03-20', close: 34.15, nav: 33.76, volume: 11200000 },
-            { date: '2025-03-21', close: 33.68, nav: 33.30, volume: 7800000 },
-            { date: '2025-03-24', close: 34.43, nav: 34.03, volume: 8300000 },
-            { date: '2025-03-25', close: 33.97, nav: 33.58, volume: 6400000 },
-            { date: '2025-03-26', close: 34.82, nav: 34.41, volume: 9100000 },
-            { date: '2025-03-27', close: 34.29, nav: 33.89, volume: 7300000 },
-            { date: '2025-03-28', close: 35.11, nav: 34.69, volume: 12500000 },
-        ];
-
         const container = document.getElementById('historicalChart');
         const chart = LightweightCharts.createChart(container, {
             width: container.clientWidth,
@@ -466,7 +417,6 @@
             priceScaleId: 'right',
             title: 'Close',
         });
-        closeSeries.setData(sampleData.map(d => ({ time: d.date, value: d.close })));
 
         // NAV — line series on the same price scale
         const navSeries = chart.addLineSeries({
@@ -476,7 +426,6 @@
             priceScaleId: 'right',
             title: 'NAV',
         });
-        navSeries.setData(sampleData.map(d => ({ time: d.date, value: d.nav })));
 
         // Volume — histogram on a separate scale pinned to the bottom 25%
         const volumeSeries = chart.addHistogramSeries({
@@ -487,9 +436,6 @@
         chart.priceScale('volume').applyOptions({
             scaleMargins: { top: 0.78, bottom: 0 },
         });
-        volumeSeries.setData(sampleData.map(d => ({ time: d.date, value: d.volume })));
-
-        chart.timeScale().fitContent();
 
         // Resize chart when container width changes
         new ResizeObserver(entries => {
@@ -509,10 +455,6 @@
             });
         });
 
-        // Time range buttons
-        const lastDate = new Date(sampleData[sampleData.length - 1].date);
-        const lastDateStr = sampleData[sampleData.length - 1].date;
-
         function shiftDate(base, deltaMonths, deltaDays) {
             const d = new Date(base);
             if (deltaMonths) d.setMonth(d.getMonth() - deltaMonths);
@@ -520,7 +462,7 @@
             return d.toISOString().split('T')[0];
         }
 
-        function setRange(rangeKey) {
+        function setRange(rangeKey, lastDate, lastDateStr) {
             document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
             document.querySelector(`.time-btn[data-range="${rangeKey}"]`).classList.add('active');
 
@@ -536,12 +478,54 @@
             chart.timeScale().setVisibleRange({ from, to: lastDateStr });
         }
 
-        document.querySelectorAll('.time-btn').forEach(btn => {
-            btn.addEventListener('click', () => setRange(btn.dataset.range));
-        });
+        // Fetch historical data from API
+        const symbol = "{{ fund.fund_code }}";
 
-        // Default to 3M
-        setRange('3M');
+        fetch(`/info/${symbol}/history`)
+            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+            .then(payload => {
+                const data = payload.data;
+                if (!data || !data.length) {
+                    container.innerHTML = '<p style="padding:20px;color:#999;">No historical data available.</p>';
+                    return;
+                }
+                closeSeries.setData( data.map(d => ({ time: d.time, value: d.close  })));
+                navSeries.setData(   data.map(d => ({ time: d.time, value: d.nav    })));
+                volumeSeries.setData(data.map(d => ({ time: d.time, value: d.volume })));
+                chart.timeScale().fitContent();
+
+                const lastEntry = data[data.length - 1];
+                const lastDate = new Date(lastEntry.time);
+                const lastDateStr = lastEntry.time;
+
+                document.querySelectorAll('.time-btn').forEach(btn => {
+                    btn.addEventListener('click', () => setRange(btn.dataset.range, lastDate, lastDateStr));
+                });
+                setRange('3M', lastDate, lastDateStr);
+
+                // Populate recent daily data table (10 most recent, newest first)
+                const recent = data.slice(-10).reverse();
+                const fmt = (v, d=4) => v != null ? Number(v).toFixed(d) : '-';
+                const fmtVol = v => v != null ? Number(v).toLocaleString() : '-';
+                const fmtDate = s => new Date(s + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+                const tbody = document.getElementById('daily-data-tbody');
+                tbody.innerHTML = recent.map(d => `
+                    <tr>
+                        <td>${fmtDate(d.time)}</td>
+                        <td>${fmt(d.open)}</td>
+                        <td>${fmt(d.close)}</td>
+                        <td>${fmt(d.high)}</td>
+                        <td>${fmt(d.low)}</td>
+                        <td>${fmt(d.nav)}</td>
+                        <td>${fmtVol(d.volume)}</td>
+                    </tr>`).join('');
+            })
+            .catch(err => {
+                console.error('Chart data fetch failed:', err);
+                container.innerHTML = '<p style="padding:20px;color:#f44336;">Failed to load chart data.</p>';
+                document.getElementById('daily-data-tbody').innerHTML =
+                    '<tr><td colspan="7" style="text-align:center;color:#f44336;">Failed to load data.</td></tr>';
+            });
     </script>
 </body>
 </html>

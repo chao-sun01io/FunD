@@ -1,7 +1,7 @@
 from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404
 from .utils import redis_conn
-from .models import FundBasicInfo, FundDailyData
+from .models import FundBasicInfo
 
 def index(request):
     funds = FundBasicInfo.objects.all()
@@ -19,9 +19,6 @@ def detail(request, symbol):
     '''
     try:
         fund = FundBasicInfo.objects.get(fund_code=symbol.upper())
-        
-        # Get recent 5 days of daily data
-        daily_data = FundDailyData.objects.filter(fund=fund).order_by('-date')[:5]
         
         # Get latest price data from Redis
         redis_client = redis_conn.get_redis_conn()
@@ -56,7 +53,6 @@ def detail(request, symbol):
         
         return render(request, 'info/detail.html', {
             'fund': fund,
-            'daily_data': daily_data,
             'latest_price': latest_price
         })
     except FundBasicInfo.DoesNotExist:
