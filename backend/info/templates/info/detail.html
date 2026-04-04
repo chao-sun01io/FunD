@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fund Detail - {{ fund.fund_code }}</title>
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -189,6 +190,78 @@
         .negative {
             color: #f44336;
         }
+        .chart-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+        }
+        .chart-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        .chart-wrapper {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        #historicalChart {
+            width: 100%;
+            height: 400px;
+        }
+        .chart-controls {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+        .time-btn {
+            padding: 4px 10px;
+            border: 1px solid #d0d0d0;
+            border-radius: 4px;
+            background: #fff;
+            color: #555;
+            font-size: 0.82em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .time-btn:hover {
+            border-color: #2196F3;
+            color: #2196F3;
+        }
+        .time-btn.active {
+            background: #2196F3;
+            border-color: #2196F3;
+            color: #fff;
+        }
+        .series-toggles {
+            display: flex;
+            gap: 6px;
+        }
+        .series-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            font-size: 0.82em;
+            font-weight: 500;
+            cursor: pointer;
+            opacity: 0.38;
+            transition: opacity 0.15s;
+        }
+        .series-btn.active { opacity: 1; }
+        .series-btn .swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+        .series-btn[data-series="close"]  { background: rgba(33,150,243,0.12); border-color: rgba(33,150,243,0.4);  color: #1565c0; }
+        .series-btn[data-series="nav"]    { background: rgba(76,175, 80,0.12); border-color: rgba(76,175, 80,0.4);  color: #2e7d32; }
+        .series-btn[data-series="volume"] { background: rgba(120,120,120,0.12); border-color: rgba(120,120,120,0.4); color: #444; }
     </style>
 </head>
 <body>
@@ -220,6 +293,28 @@
             <div class="info-card">
                 <div class="info-label">Fund Company</div>
                 <div class="info-value">{{ fund.fund_company }}</div>
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <h2>Historical Price & Volume</h2>
+            <div class="chart-wrapper">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div class="chart-controls" style="margin-bottom:0;">
+                        <button class="time-btn" data-range="1D">1D</button>
+                        <button class="time-btn" data-range="5D">5D</button>
+                        <button class="time-btn" data-range="1M">1M</button>
+                        <button class="time-btn" data-range="3M">3M</button>
+                        <button class="time-btn" data-range="YTD">YTD</button>
+                        <button class="time-btn" data-range="1Y">1Y</button>
+                    </div>
+                    <div class="series-toggles">
+                        <button class="series-btn active" data-series="close"><span class="swatch" style="background:#2196F3;"></span>Close</button>
+                        <button class="series-btn active" data-series="nav"><span class="swatch" style="background:#4caf50;"></span>NAV</button>
+                        <button class="series-btn active" data-series="volume"><span class="swatch" style="background:#999;"></span>Volume</button>
+                    </div>
+                </div>
+                <div id="historicalChart"></div>
             </div>
         </div>
 
@@ -307,5 +402,146 @@
 
         <a href="{% url 'index' %}" class="back-link">← Back to Fund List</a>
     </div>
+
+    <script>
+        const sampleData = [
+            { date: '2025-02-17', close: 27.42, nav: 27.15, volume: 3800000 },
+            { date: '2025-02-18', close: 27.89, nav: 27.61, volume: 4200000 },
+            { date: '2025-02-19', close: 28.14, nav: 27.85, volume: 5100000 },
+            { date: '2025-02-20', close: 27.73, nav: 27.46, volume: 3600000 },
+            { date: '2025-02-21', close: 28.32, nav: 28.02, volume: 6700000 },
+            { date: '2025-02-24', close: 29.05, nav: 28.74, volume: 7200000 },
+            { date: '2025-02-25', close: 28.81, nav: 28.52, volume: 4900000 },
+            { date: '2025-02-26', close: 29.47, nav: 29.16, volume: 8100000 },
+            { date: '2025-02-27', close: 29.12, nav: 28.83, volume: 5500000 },
+            { date: '2025-02-28', close: 28.65, nav: 28.37, volume: 6300000 },
+            { date: '2025-03-03', close: 30.18, nav: 29.87, volume: 9400000 },
+            { date: '2025-03-04', close: 30.74, nav: 30.42, volume: 8800000 },
+            { date: '2025-03-05', close: 31.02, nav: 30.69, volume: 7600000 },
+            { date: '2025-03-06', close: 30.56, nav: 30.24, volume: 5200000 },
+            { date: '2025-03-07', close: 31.38, nav: 31.04, volume: 6900000 },
+            { date: '2025-03-10', close: 31.95, nav: 31.60, volume: 7400000 },
+            { date: '2025-03-11', close: 32.47, nav: 32.11, volume: 9200000 },
+            { date: '2025-03-12', close: 31.83, nav: 31.48, volume: 6100000 },
+            { date: '2025-03-13', close: 32.16, nav: 31.80, volume: 5800000 },
+            { date: '2025-03-14', close: 33.04, nav: 32.67, volume: 10300000 },
+            { date: '2025-03-17', close: 33.52, nav: 33.14, volume: 8500000 },
+            { date: '2025-03-18', close: 32.89, nav: 32.52, volume: 7100000 },
+            { date: '2025-03-19', close: 33.71, nav: 33.33, volume: 9600000 },
+            { date: '2025-03-20', close: 34.15, nav: 33.76, volume: 11200000 },
+            { date: '2025-03-21', close: 33.68, nav: 33.30, volume: 7800000 },
+            { date: '2025-03-24', close: 34.43, nav: 34.03, volume: 8300000 },
+            { date: '2025-03-25', close: 33.97, nav: 33.58, volume: 6400000 },
+            { date: '2025-03-26', close: 34.82, nav: 34.41, volume: 9100000 },
+            { date: '2025-03-27', close: 34.29, nav: 33.89, volume: 7300000 },
+            { date: '2025-03-28', close: 35.11, nav: 34.69, volume: 12500000 },
+        ];
+
+        const container = document.getElementById('historicalChart');
+        const chart = LightweightCharts.createChart(container, {
+            width: container.clientWidth,
+            height: 400,
+            layout: {
+                background: { color: '#ffffff' },
+                textColor: '#333333',
+            },
+            grid: {
+                vertLines: { color: 'rgba(0,0,0,0.05)' },
+                horzLines: { color: 'rgba(0,0,0,0.05)' },
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' },
+            timeScale: {
+                borderColor: 'rgba(0,0,0,0.1)',
+                timeVisible: false,
+            },
+        });
+
+        // Close price — area series on the main (right) price scale
+        const closeSeries = chart.addAreaSeries({
+            lineColor: '#2196F3',
+            topColor: 'rgba(33, 150, 243, 0.15)',
+            bottomColor: 'rgba(33, 150, 243, 0.0)',
+            lineWidth: 2,
+            priceScaleId: 'right',
+            title: 'Close',
+        });
+        closeSeries.setData(sampleData.map(d => ({ time: d.date, value: d.close })));
+
+        // NAV — line series on the same price scale
+        const navSeries = chart.addLineSeries({
+            color: '#4caf50',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            priceScaleId: 'right',
+            title: 'NAV',
+        });
+        navSeries.setData(sampleData.map(d => ({ time: d.date, value: d.nav })));
+
+        // Volume — histogram on a separate scale pinned to the bottom 25%
+        const volumeSeries = chart.addHistogramSeries({
+            color: 'rgba(120, 120, 120, 0.4)',
+            priceScaleId: 'volume',
+            priceFormat: { type: 'volume' },
+        });
+        chart.priceScale('volume').applyOptions({
+            scaleMargins: { top: 0.78, bottom: 0 },
+        });
+        volumeSeries.setData(sampleData.map(d => ({ time: d.date, value: d.volume })));
+
+        chart.timeScale().fitContent();
+
+        // Resize chart when container width changes
+        new ResizeObserver(entries => {
+            if (entries.length > 0) {
+                chart.applyOptions({ width: entries[0].contentRect.width });
+            }
+        }).observe(container);
+
+        // Series visibility toggles
+        const seriesMap = { close: closeSeries, nav: navSeries, volume: volumeSeries };
+        document.querySelectorAll('.series-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const series = seriesMap[btn.dataset.series];
+                const visible = !btn.classList.contains('active');
+                series.applyOptions({ visible });
+                btn.classList.toggle('active', visible);
+            });
+        });
+
+        // Time range buttons
+        const lastDate = new Date(sampleData[sampleData.length - 1].date);
+        const lastDateStr = sampleData[sampleData.length - 1].date;
+
+        function shiftDate(base, deltaMonths, deltaDays) {
+            const d = new Date(base);
+            if (deltaMonths) d.setMonth(d.getMonth() - deltaMonths);
+            if (deltaDays)   d.setDate(d.getDate() - deltaDays);
+            return d.toISOString().split('T')[0];
+        }
+
+        function setRange(rangeKey) {
+            document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.time-btn[data-range="${rangeKey}"]`).classList.add('active');
+
+            let from;
+            switch (rangeKey) {
+                case '1D':  from = shiftDate(lastDate, 0, 1);   break;
+                case '5D':  from = shiftDate(lastDate, 0, 7);   break;
+                case '1M':  from = shiftDate(lastDate, 1);       break;
+                case '3M':  from = shiftDate(lastDate, 3);       break;
+                case 'YTD': from = `${lastDate.getFullYear()}-01-01`; break;
+                case '1Y':  from = shiftDate(lastDate, 12);      break;
+            }
+            chart.timeScale().setVisibleRange({ from, to: lastDateStr });
+        }
+
+        document.querySelectorAll('.time-btn').forEach(btn => {
+            btn.addEventListener('click', () => setRange(btn.dataset.range));
+        });
+
+        // Default to 3M
+        setRange('3M');
+    </script>
 </body>
 </html>
