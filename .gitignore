@@ -148,6 +148,9 @@ static/
 .env.test
 .env.production
 
+# Claude Code
+.claude/
+
 # IDE files
 .vscode/
 .idea/
