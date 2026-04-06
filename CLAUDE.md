@@ -26,7 +26,7 @@ docker compose -f docker-compose.infra.yml up -d
 uv run python manage.py migrate
 
 # Terminal 1 — Django
-uv run python manage.py runserver
+DEBUG_LEVEL=DEBUG uv run python manage.py runserver
 
 # Terminal 2 — Celery worker
 uv run celery -A config worker --loglevel=info

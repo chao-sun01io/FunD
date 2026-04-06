@@ -44,6 +44,14 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.environ.get('CELERY_WORKER_PREFETCH_M
 # CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 # ====== End of Celery Configuration =====
 
+# ====== Market Data Provider Configuration =====
+HISTORICAL_PROVIDERS = [
+    'info.market_data.providers.yfinance_provider.YFinanceProvider',
+    'info.market_data.providers.akshare_provider.AkShareProvider',
+]
+HISTORY_CACHE_TTL = 60 * 60 * 24  # 24 hours
+# ====== End of Market Data Provider Configuration =====
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -57,6 +65,17 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = []
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },                                                                               
+    'root': {
+        'handlers': ['console'],                                                     
+        'level': os.environ.get('LOG_LEVEL', 'WARNING'),                          
+    },
+}
 
 # Application definition
 

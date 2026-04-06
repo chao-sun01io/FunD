@@ -35,7 +35,7 @@
     "model": "info.fundbasicinfo",
     "pk": 3,
     "fields": {
-      "fund_code": "164906",
+      "fund_code": "164906.SZ",
       "fund_name": "交银中证海外中国互联网ETF联接A",
       "fund_type": "ETF联接基金",
       "currency": "CNY",
@@ -51,7 +51,7 @@
     "model": "info.fundbasicinfo",
     "pk": 4,
     "fields": {
-      "fund_code": "162411",
+      "fund_code": "162411.SZ",
       "fund_name": "华宝标普石油天然气上游股票(LOF)",
       "fund_type": "LOF",
       "currency": "CNY",

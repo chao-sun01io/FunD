@@ -12,45 +12,14 @@ Track ETFs and LOFs across US and CN A-share markets. Display fund details with 
 
 ## Architecture
 
-### Data Pipeline: Two Separate Flows
-
-```
-LIVE TICK (every 15s during market hours)
-  Sina Finance API ──► Celery task ──► Redis ──► detail page (live quote widget)
-  (gb_<symbol>)         fetch_price      info:<code>:latest_quote
-
-INTRADAY 1-MIN (every 1 min during market hours)
-  Sina Finance API ──► Celery task ──► Redis hash ──► intraday chart
-  (gb_<symbol>)         fetch_1min_bar   price:<code>:1m:<date>
-                             └──────────► PostgreSQL (FundIntraday1Min, short-term archive)
-
-DAILY OHLCV (nightly, independent of intraday)
-  Yahoo Finance API ──► Celery task ──► PostgreSQL ──► Redis cache ──► /api/fund/<code>/history/
-  (yfinance)             fetch_ohlcv      FundDailyData   api:fund:<code>:history:<range>
-```
-
-**Why two sources:**
-- Sina Finance provides live quotes in real time (already working), but does not offer historical OHLCV data for US ETFs.
-- Yahoo Finance (`yfinance`) provides free historical OHLCV (open, high, low, close, volume) going back years, suitable for chart data. It does not provide intraday live quotes reliably.
-
 ### Market Data Source Abstraction
 
-All external API calls go through a provider interface so the underlying source can be swapped without touching tasks or views.
+It provides multiple-resolution data:
+- 1-minute intraday bars for the current trading day (for live charts)
+- Daily OHLCV + NAV for historical charts and analysis
+- Latest price and change for the info page (up to api provider's update frequency, e.g. every 15s for Sina Finance).
 
-```
-info/market_data/
-  base.py              ← abstract MarketDataProvider (get_live_quote, get_historical_ohlcv)
-  providers/
-    sina.py            ← SinaFinanceProvider  (live quotes for US via gb_, CN via sh/sz)
-    yfinance_provider.py ← YFinanceProvider   (historical OHLCV for US ETFs)
-```
-
-Provider is selected by setting:
-```python
-# settings.py
-LIVE_QUOTE_PROVIDER   = 'info.market_data.providers.sina.SinaFinanceProvider'
-HISTORICAL_PROVIDER   = 'info.market_data.providers.yfinance_provider.YFinanceProvider'
-```
+details in [market_data_layer.md](./market_data_layer.md)
 
 ### Storage
 
@@ -74,14 +43,36 @@ The frontend (templates + lightweight-charts) only consumes internal JSON API en
 Each fund has its own page showing fund metadata, the latest live price, and interactive historical charts.
 
 ### User Stories
-- As a user, I want to see a fund's key info and current live price on a single page.
+- As a user, I want to see a fund's key info and historical data on a single page.
+- As a user, I want to see the latest price and daily change so I can quickly gauge how the fund is doing today.
 - As a user, I want to see a price vs NAV chart so I can understand how the fund has historically traded relative to its intrinsic value.
 - As a user, I want to see premium/discount % over time to identify patterns.
 - As a user, I want to see trading volume alongside price to understand liquidity.
 
 ---
 
-### Section 1: Fund Info & Live Quote
+### Section 1: Historical Charts
+
+Charts rendered client-side with **lightweight-charts v4** (TradingView, Apache 2.0), loaded from CDN. Data fetched from the internal history API endpoint.
+
+#### Chart 1: Price vs NAV (line chart)
+- Two lines: `closing_price` (market) and `net_asset_value` (NAV)
+- Y-axis in native currency (USD for US funds)
+- 
+
+#### Chart 2: Premium / Discount % (baseline area chart)
+- Single series: `(closing_price − net_asset_value) / net_asset_value × 100`
+- Area fill: green when value > 0 (premium), red when < 0 (discount)
+- Horizontal baseline at 0%
+- Only rendered for dates where both closing_price and net_asset_value are non-null
+
+
+#### Date Range Selector
+Buttons: **1M · 3M · 6M · YTD · 1Y · All** — clicking refetches the API with the new range and re-renders all charts.
+
+---
+
+### Section 2: Fund Info & Live Quote
 
 | Field | Source | Notes |
 |---|---|---|
@@ -97,32 +88,6 @@ Each fund has its own page showing fund metadata, the latest live price, and int
 **Graceful degradation:**
 - If Redis has no live quote → show last closing price from `FundDailyData` with a "Market closed" label
 - If no NAV in DB → omit premium/discount field, show "NAV not available"
-
----
-
-### Section 2: Historical Charts
-
-Charts rendered client-side with **lightweight-charts v4** (TradingView, Apache 2.0), loaded from CDN. Data fetched from the internal history API endpoint.
-
-#### Chart 1: Price vs NAV (line chart)
-- Two lines: `closing_price` (market) and `net_asset_value` (NAV)
-- Y-axis in native currency (USD for US funds)
-- Tooltip shows both values on hover
-- Data: `FundDailyData.closing_price`, `FundDailyData.net_asset_value`
-
-#### Chart 2: Premium / Discount % (baseline area chart)
-- Single series: `(closing_price − net_asset_value) / net_asset_value × 100`
-- Area fill: green when value > 0 (premium), red when < 0 (discount)
-- Horizontal baseline at 0%
-- Only rendered for dates where both closing_price and net_asset_value are non-null
-
-#### Chart 3: Volume (histogram)
-- Daily trading volume bars
-- Data: `FundDailyData.volume` (new field)
-- If no volume data → chart shows empty state, does not error
-
-#### Date Range Selector
-Buttons: **1M · 3M · 6M · 1Y · All** — clicking refetches the API with the new range and re-renders all three charts.
 
 ---
 
