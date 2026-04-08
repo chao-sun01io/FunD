@@ -53,6 +53,19 @@ docker-compose up        # foreground
 docker-compose up -d     # detached
 ```
 
+### Production Deployment
+
+See `doc/deployment.md` for full instructions. Quick reference:
+
+```bash
+cp backend/.env.production.example backend/.env
+# fill in all required values (secret key, password, domain)
+./scripts/init-letsencrypt.sh your@email.com
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec web python manage.py migrate
+docker compose -f docker-compose.prod.yml exec web python manage.py loaddata initial_data.json
+```
+
 ### Common commands (run from `backend/`)
 
 ```bash
@@ -91,9 +104,10 @@ Five Docker services: `web` (Django on port 8000), `celery` (worker), `celery-be
 
 ## Environment
 
-Two env templates:
+Three env templates:
 - `backend/.env.local.example` — hybrid dev (local processes + Docker infra). Copy this for day-to-day work.
 - `backend/.env.example` — full Docker (`docker-compose up`). `USE_POSTGRES=True`, service hostnames match Docker service names.
+- `backend/.env.production.example` — production deployment (`docker-compose.prod.yml`). `DEBUG=False`, HTTPS, internal Redis port.
 
 `USE_POSTGRES=True` → PostgreSQL; `False` or unset → SQLite (no Docker needed).
 
