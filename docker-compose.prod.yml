@@ -60,6 +60,8 @@ services:
       - "80:80"
       - "443:443"
     env_file: ./backend/.env
+    environment:
+      - NGINX_ENVSUBST_FILTER=DOMAIN
     volumes:
       - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - static_files:/usr/src/app/staticfiles:ro

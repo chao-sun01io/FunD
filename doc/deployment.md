@@ -17,18 +17,6 @@ sudo usermod -aG docker $USER
 # Log out and back in for group change to take effect
 ```
 
-### Set up swap (recommended for 1GB VPS)
-
-A 1GB swap file prevents out-of-memory kills during builds and traffic spikes.
-
-```bash
-sudo fallocate -l 1G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
 ### Memory budget
 
 The production compose sets `mem_limit` per service. Approximate usage at idle:
@@ -88,7 +76,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ```bash
 docker compose -f docker-compose.prod.yml exec web python manage.py migrate
-docker compose -f docker-compose.prod.yml exec web python manage.py loaddata initial_data.json
+docker compose -f docker-compose.prod.yml exec web python manage.py loaddata initial_funds.json
 docker compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
 ```
 

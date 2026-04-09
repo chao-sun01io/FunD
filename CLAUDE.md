@@ -63,7 +63,7 @@ cp backend/.env.production.example backend/.env
 ./scripts/init-letsencrypt.sh your@email.com
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec web python manage.py migrate
-docker compose -f docker-compose.prod.yml exec web python manage.py loaddata initial_data.json
+docker compose -f docker-compose.prod.yml exec web python manage.py loaddata initial_funds.json
 ```
 
 ### Common commands (run from `backend/`)

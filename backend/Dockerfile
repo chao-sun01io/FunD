@@ -9,12 +9,12 @@ ENV UV_SYSTEM_PYTHON=1
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
-RUN uv pip install gunicorn
+RUN uv pip install --system --no-cache -r pyproject.toml gunicorn
 
 COPY . /usr/src/app
 
 RUN DJANGO_SECRET_KEY=build-placeholder DJANGO_DEBUG=False \
+    CELERY_BROKER_URL=memory:// \
     python manage.py collectstatic --noinput
 
 CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "2", "--max-requests", "1000", "--max-requests-jitter", "50", "--timeout", "120"]
