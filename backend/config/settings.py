@@ -49,6 +49,9 @@ HISTORICAL_PROVIDERS = [
     'info.market_data.providers.yfinance_provider.YFinanceProvider',
     'info.market_data.providers.akshare_provider.AkShareProvider',
 ]
+NAV_PROVIDERS = [
+    'info.market_data.providers.eastmoney_nav_provider.EastMoneyNAVProvider',
+]
 HISTORY_CACHE_TTL = 60 * 60 * 24  # 24 hours
 # ====== End of Market Data Provider Configuration =====
 

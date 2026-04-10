@@ -1,15 +1,12 @@
 import logging
-import re
 from datetime import date
 from decimal import Decimal
 
 import akshare as ak
 
-from info.market_data.base import HistoricalProvider, OHLCVBar, ProviderError
+from info.market_data.base import CN_SYMBOL_PATTERN, HistoricalProvider, OHLCVBar, ProviderError
 
 logger = logging.getLogger(__name__)
-
-_CN_PATTERN = re.compile(r'^\d{6}\.(SZ|SH|BJ)$', re.IGNORECASE)
 
 # Map exchange suffix to Sina prefix
 _EXCHANGE_PREFIX = {
@@ -23,7 +20,7 @@ class AkShareProvider(HistoricalProvider):
     """Historical OHLCV via akshare's fund_etf_hist_sina. Best for CN A-share funds/ETFs."""
 
     def supports_symbol(self, symbol: str) -> bool:
-        return bool(_CN_PATTERN.match(symbol))
+        return bool(CN_SYMBOL_PATTERN.match(symbol))
 
     def get_daily_ohlcv(
         self,
