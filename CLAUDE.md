@@ -114,3 +114,5 @@ Three env templates:
 ## Documentation
 
 Design docs are in `doc/`: `backend.md`, `celery_tasks.md`, `redis_db_design.md`, `testing_strategy.md`.
+
+When adding a new Django management command, also document it in `doc/site_admin.md`.
