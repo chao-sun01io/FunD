@@ -25,13 +25,15 @@ The application layer accesses the market data layer through a unified provider 
 ```
 info/market_data/
     __init__.py
-    base.py                        # Dataclasses (OHLCVBar) + ABCs
+    base.py                        # Dataclasses (OHLCVBar, NAVPoint) + ABCs
     registry.py                    # Provider loading + fallback chain
-    service.py                     # HistoricalDataService (Redis cache -> external API)
+    service.py                     # HistoricalDataService (Redis → DB → providers)
+    persistence.py                 # DB read/write (load_bars_from_db, persist_bars)
     providers/
         __init__.py
-        yfinance_provider.py       # YFinanceProvider     (historical OHLCV, US)
-        akshare_provider.py        # AkShareProvider      (historical OHLCV, CN)
+        yfinance_provider.py       # YFinanceProvider          (OHLCV, US; nav=close)
+        akshare_provider.py        # AkShareProvider           (OHLCV, CN)
+        eastmoney_nav_provider.py  # EastMoneyNAVProvider      (NAV, CN only)
     data_api.py                    # Legacy Sina wrapper for live quotes
 ```
 
@@ -41,7 +43,8 @@ info/market_data/
 
 | Type | Fields | Purpose |
 |---|---|---|
-| `OHLCVBar` | `date, open, high, low, close, volume` | Standard exchange format between providers and service layer. `Decimal` for price fields. |
+| `OHLCVBar` | `date, open, high, low, close, volume, nav` | Standard exchange format between providers and service layer. `Decimal` for price fields. `nav` is optional. |
+| `NAVPoint` | `date, nav` | Official unit NAV for a fund. |
 | `ProviderError` | exception | Raised on network/parse/rate-limit failures. |
 
 **Abstract classes:**
@@ -49,19 +52,23 @@ info/market_data/
 | ABC | Methods | Implementors |
 |---|---|---|
 | `HistoricalProvider` | `get_daily_ohlcv(symbol, start_date, end_date) -> list[OHLCVBar]`; `supports_symbol(symbol) -> bool` | YFinanceProvider, AkShareProvider |
+| `NAVProvider` | `get_daily_nav(symbol, start_date, end_date) -> list[NAVPoint]`; `supports_symbol(symbol) -> bool` | EastMoneyNAVProvider |
 
 `supports_symbol` is a fast-path check — the fallback chain calls it before attempting a network request, so irrelevant providers are skipped without an HTTP round-trip.
 
 ### Concrete Providers
 
-**YFinanceProvider** — wraps `yfinance` library. Converts pandas DataFrame rows to `OHLCVBar`. Normalizes timezone-aware timestamps to `date` objects.
+**YFinanceProvider** — wraps `yfinance` library. Converts pandas DataFrame rows to `OHLCVBar`. Normalizes timezone-aware timestamps to `date` objects. For US-listed ETFs, sets `nav = close` because Yahoo Finance does not provide historical NAV — the close price closely tracks NAV for liquid US ETFs.
 
 **AkShareProvider** — wraps `akshare` library, using `fund_etf_hist_sina()`. Converts `NNNNNN.SZ`/`.SH` to Sina-style prefix (`sz164906`), fetches full history, then filters to the requested date range.
 
+**EastMoneyNAVProvider** — fetches official unit NAV from fund.eastmoney.com for CN exchange-listed funds/ETFs (`.SZ`, `.SH`, `.BJ` symbols only). Does not support US-listed symbols.
+
 ### Fallback Chain (`registry.py`)
 
-Module-level function (cached with `@lru_cache`):
-- `get_historical_chain() -> list[HistoricalProvider]` — reads `settings.HISTORICAL_PROVIDERS`, imports and instantiates each class
+Module-level functions (cached with `@lru_cache`):
+- `get_historical_chain() -> list[HistoricalProvider]` — reads `settings.HISTORICAL_PROVIDERS`
+- `get_nav_chain() -> list[NAVProvider]` — reads `settings.NAV_PROVIDERS`
 
 The chain execution pattern used by the service layer:
 
@@ -69,7 +76,7 @@ The chain execution pattern used by the service layer:
 for provider in chain:
     if provider.supports_symbol(symbol):
         try:
-            return provider.get_daily_ohlcv(...)
+            return provider.get_daily_ohlcv(...)  # or get_daily_nav(...)
         except ProviderError:
             log warning, continue to next
 raise ProviderError("All providers exhausted")
@@ -77,9 +84,11 @@ raise ProviderError("All providers exhausted")
 
 Ordering in settings encodes preference (primary first). This is a simple chain-of-responsibility — no need for per-symbol routing tables at this project's scale.
 
+**NAV resolution strategy:** The service first fetches OHLCV. If the OHLCV bars already carry NAV (e.g. YFinance sets `nav=close` for US ETFs), the separate NAV chain is skipped entirely. Otherwise, it fetches from the NAV chain and merges by date.
+
 ### Historical Data Service (`service.py`)
 
-`HistoricalDataService` orchestrates a two-tier query flow: **Redis cache -> external API**.
+`HistoricalDataService` orchestrates a three-tier query flow: **Redis response cache → DB → provider gap-fill**.
 
 **`get_history(fund_code, range_key) -> list[dict]`** — single entry point for the API endpoint:
 
@@ -87,16 +96,23 @@ Ordering in settings encodes preference (primary first). This is a simple chain-
 1. Compute date bounds from range_key
        1M = 30d, 3M = 90d, 6M = 180d, YTD = Jan 1, 1Y = 365d, all = 1 year
 
-2. Check Redis cache: api:fund:{symbol}:history:{start}:{end}
+2. Redis response cache: api:fund:{symbol}:history:{version}:{start}:{end}
        HIT  -> return cached JSON
        MISS -> continue
 
-3. Fetch from provider chain: fetch_from_chain(symbol, start_date, end_date)
+3. DB read: load existing bars from FundDailyData
 
-4. Cache result in Redis with HISTORY_CACHE_TTL (default 24h), return
+4. Gap computation: identify missing date ranges
+       - Front gap: [start, db_min-1] if DB starts later (always filled)
+       - Back gap: [db_max+1, end] if DB ends earlier (gated by freshness TTL)
+       - Interior gaps: dates with NULL fields, collapsed into ranges (gated)
+
+5. For each gap: fetch OHLCV + NAV from providers, persist to DB
+
+6. Re-read DB, serialize, cache in Redis with HISTORY_CACHE_TTL (default 24h)
 ```
 
-**Future enhancements:** PostgreSQL persistence (cache -> DB -> API three-tier flow) can be layered in when needed for offline access and backfill. The management command (`backfill_ohlcv`) is already in place for DB population when that tier is added.
+A per-symbol freshness stamp (`mktdata:{symbol}:last_check_at`, 1h TTL) gates back-gap and interior-gap fetches to avoid hammering providers when they simply don't have the data.
 
 ### Configuration (`settings.py`)
 
@@ -106,11 +122,13 @@ HISTORICAL_PROVIDERS = [
     'info.market_data.providers.yfinance_provider.YFinanceProvider',
     'info.market_data.providers.akshare_provider.AkShareProvider',
 ]
+NAV_PROVIDERS = [
+    'info.market_data.providers.eastmoney_nav_provider.EastMoneyNAVProvider',
+]
 HISTORY_CACHE_TTL = 60 * 60 * 24    # 24 hours
 ```
 
 ## Backlog
-- Add PostgreSQL persistence layer (cache -> DB -> API three-tier flow)
 - Add support for more data sources
 - Live quote abstraction: `LiveQuoteProvider` ABC + `SinaFinanceProvider` (migrate from `data_api.py`), with `LiveQuote` dataclass (`symbol, price, change, timestamp, extra: dict`)
 - Intraday abstraction (`live.py`): `IntradaySource` ABC with `PollingIntradaySource` (Celery Beat) and `WebSocketIntradaySource` (future). Both converge on the same Redis state — `latest()` always reads from Redis, the difference is only how data gets into Redis (Celery task = write side, IntradaySource = read side)
