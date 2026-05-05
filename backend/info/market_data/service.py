@@ -167,11 +167,15 @@ def _fetch_gap(symbol: str, gap_start: date, gap_end: date) -> tuple[list[OHLCVB
     except ProviderError as exc:
         logger.warning("OHLCV gap fetch failed for %s [%s, %s]: %s", symbol, gap_start, gap_end, exc)
         bars = []
-    try:
-        nav_points = fetch_nav_from_chain(symbol, gap_start, gap_end)
-    except ProviderError as exc:
-        logger.info("NAV gap fetch skipped for %s [%s, %s]: %s", symbol, gap_start, gap_end, exc)
+    # Skip separate NAV fetch if OHLCV bars already carry NAV data
+    if bars and all(b.nav is not None for b in bars):
         nav_points = []
+    else:
+        try:
+            nav_points = fetch_nav_from_chain(symbol, gap_start, gap_end)
+        except ProviderError as exc:
+            logger.info("NAV gap fetch skipped for %s [%s, %s]: %s", symbol, gap_start, gap_end, exc)
+            nav_points = []
     return bars, nav_points
 
 

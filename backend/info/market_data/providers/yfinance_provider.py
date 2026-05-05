@@ -50,5 +50,6 @@ class YFinanceProvider(HistoricalProvider):
                 low=Decimal(str(round(row['Low'], 4))) if row.get('Low') is not None else None,
                 close=Decimal(str(round(row['Close'], 4))) if row.get('Close') is not None else None,
                 volume=int(row['Volume']) if row.get('Volume') is not None else None,
+                nav=Decimal(str(round(row['Close'], 4))) if row.get('Close') is not None else None,
             ))
         return bars
