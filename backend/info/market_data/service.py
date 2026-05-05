@@ -201,7 +201,7 @@ def _provider_only_history(symbol: str, start: date, end: date) -> list[OHLCVBar
 class HistoricalDataService:
 
     def get_history(self, fund_code: str, range_key: str = '1Y') -> list[dict]:
-        """3-tier cache: Redis response cache → DB → provider gap-fill."""
+        """Redis cache → DB (if fresh) → full provider fetch + upsert."""
         start = _range_start(range_key)
         if start is None:
             start = date.today() - timedelta(days=365)
@@ -217,40 +217,32 @@ class HistoricalDataService:
             logger.debug("Cache hit for %s", cache_key)
             return json.loads(cached)
 
-        # Look up fund; if absent, fall back to provider-only path
-        # Local import to avoid touching Django ORM in non-DB contexts (tests).
+        # Look up fund; if absent, return None
         from info.models import FundBasicInfo
         fund = FundBasicInfo.objects.filter(fund_code=symbol).first()
 
         if fund is None:
-            logger.debug("fund %s not in FundBasicInfo — provider-only path", symbol)
-            
-            # bars = _provider_only_history(symbol, start, end)
-            # data = [_bar_to_dict(bar) for bar in bars]
-            # self._write_response_cache(redis, cache_key, data)
-            # return data
-            
+            logger.debug("fund %s not in FundBasicInfo", symbol)
             return None
 
-        # Tier 2: DB read
-        bars = load_bars_from_db(fund, start, end)
-
-        # Tier 3: gap computation & fill (edge gaps + incomplete-row ranges)
-        back_gap_allowed = not _is_fresh(redis, symbol)
-        gaps = _compute_gaps(bars, start, end, back_gap_allowed)
-
-        if gaps:
-            for gap_start, gap_end in gaps:
-                logger.debug("gap fill %s [%s, %s]", symbol, gap_start, gap_end)
-                gap_bars, gap_nav = _fetch_gap(symbol, gap_start, gap_end)
-                try:
-                    persist_bars(fund, gap_bars, gap_nav)
-                except Exception:
-                    logger.exception("persist_bars failed for %s", symbol)
-            _mark_fresh(redis, symbol)
-            # Re-read DB to get the newly persisted rows merged with existing
+        # Tier 2: if fresh, serve from DB without hitting providers
+        if _is_fresh(redis, symbol):
             bars = load_bars_from_db(fund, start, end)
+            data = [_bar_to_dict(bar) for bar in bars]
+            self._write_response_cache(redis, cache_key, data)
+            return data
 
+        # Tier 3: stale — fetch full range from providers, upsert to DB
+        logger.debug("fetching full range %s [%s, %s]", symbol, start, end)
+        fetched_bars, nav_points = _fetch_gap(symbol, start, end)
+        try:
+            persist_bars(fund, fetched_bars, nav_points)
+        except Exception:
+            logger.exception("persist_bars failed for %s", symbol)
+        _mark_fresh(redis, symbol)
+
+        # Read from DB (includes both old + newly upserted rows)
+        bars = load_bars_from_db(fund, start, end)
         data = [_bar_to_dict(bar) for bar in bars]
         self._write_response_cache(redis, cache_key, data)
         return data

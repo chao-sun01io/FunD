@@ -146,14 +146,14 @@ def test_fund_not_in_db_returns_none(
 @patch.object(service_module, 'load_bars_from_db')
 @patch.object(service_module, 'fetch_nav_from_chain')
 @patch.object(service_module, 'fetch_ohlcv_from_chain')
-def test_db_empty_triggers_full_gap_fetch_and_persist(
+def test_stale_triggers_full_fetch_and_persist(
     mock_ohlcv, mock_nav, mock_load, mock_persist, mock_redis,
 ):
     mock_redis.return_value = FakeRedis()
-    # First load returns empty; after gap-fill we read again and see the rows
+    # After provider fetch + persist, DB read returns the rows
     persisted_bars = _make_bars()
     persisted_bars[0].nav = Decimal('1.2345')
-    mock_load.side_effect = [[], persisted_bars]
+    mock_load.return_value = persisted_bars
     mock_ohlcv.return_value = _make_bars()
     mock_nav.return_value = [NAVPoint(date=date(2024, 1, 2), nav=Decimal('1.2345'))]
 
@@ -167,7 +167,7 @@ def test_db_empty_triggers_full_gap_fetch_and_persist(
     mock_ohlcv.assert_called_once()
     mock_nav.assert_called_once()
     mock_persist.assert_called_once()
-    assert mock_load.call_count == 2
+    mock_load.assert_called_once()
 
 
 @patch.object(service_module, 'get_redis_conn')
@@ -175,33 +175,27 @@ def test_db_empty_triggers_full_gap_fetch_and_persist(
 @patch.object(service_module, 'load_bars_from_db')
 @patch.object(service_module, 'fetch_nav_from_chain')
 @patch.object(service_module, 'fetch_ohlcv_from_chain')
-def test_fresh_stamp_suppresses_back_gap_fetch(
+def test_fresh_stamp_skips_provider_fetch(
     mock_ohlcv, mock_nav, mock_load, mock_persist, mock_redis,
 ):
     fake = FakeRedis()
-    # Pre-set freshness stamp
+    # Pre-set freshness stamp — data is fresh
     fake.setex('mktdata:164906.SZ:last_check_at', 3600, '1')
     mock_redis.return_value = fake
 
-    # DB returns bars for *all* days in [start, end] so neither front nor back
-    # gap applies. The freshness stamp only matters when a back gap would
-    # otherwise be computed.
-    bars = _make_bars()
-    # Make the bars span the full computed range by setting the dates to today
-    # and start. We can't easily predict start/end, so just confirm that
-    # provider fetches are not called regardless of what load returns.
-    mock_load.return_value = bars
+    mock_load.return_value = _make_bars()
 
     fund = MagicMock()
     with _patch_fund_lookup(fund):
         svc = HistoricalDataService()
         svc.get_history('164906.SZ', range_key='1M')
 
-    # Gaps depend on dates; to deterministically verify freshness gating we rely
-    # on the unit tests for _compute_gaps. Here we just check persist wasn't
-    # called when load returns bars covering enough dates to avoid a front gap.
-    # The main behavior under test is captured in test_gaps.py.
-    # At minimum, no exceptions, response cache written.
+    # When fresh, providers are not called — serve directly from DB
+    mock_ohlcv.assert_not_called()
+    mock_nav.assert_not_called()
+    mock_persist.assert_not_called()
+    mock_load.assert_called_once()
+    # Response cache still written
     assert any(':v1:' in k for k in fake.store.keys())
 
 
@@ -210,11 +204,11 @@ def test_fresh_stamp_suppresses_back_gap_fetch(
 @patch.object(service_module, 'load_bars_from_db')
 @patch.object(service_module, 'fetch_nav_from_chain')
 @patch.object(service_module, 'fetch_ohlcv_from_chain')
-def test_provider_failure_during_gap_fill_does_not_break_response(
+def test_provider_failure_does_not_break_response(
     mock_ohlcv, mock_nav, mock_load, mock_persist, mock_redis,
 ):
     mock_redis.return_value = FakeRedis()
-    mock_load.side_effect = [[], []]  # empty before and after gap fetch
+    mock_load.return_value = []  # DB read after failed fetch
     mock_ohlcv.side_effect = ProviderError("down")
     mock_nav.side_effect = ProviderError("down")
 
@@ -224,8 +218,6 @@ def test_provider_failure_during_gap_fill_does_not_break_response(
         result = svc.get_history('164906.SZ', range_key='1M')
 
     assert result == []
-    # persist still called (with empty lists) — safe no-op
-    mock_persist.assert_called_once()
 
 
 @patch.object(service_module, 'get_redis_conn')
@@ -238,7 +230,7 @@ def test_second_call_served_from_response_cache(
 ):
     fake = FakeRedis()
     mock_redis.return_value = fake
-    mock_load.side_effect = [[], _make_bars(), _make_bars()]  # shouldn't reach 3rd
+    mock_load.return_value = _make_bars()
     mock_ohlcv.return_value = _make_bars()
     mock_nav.return_value = []
 
@@ -259,12 +251,12 @@ def test_second_call_served_from_response_cache(
 @patch.object(service_module, 'load_bars_from_db')
 @patch.object(service_module, 'fetch_nav_from_chain')
 @patch.object(service_module, 'fetch_ohlcv_from_chain')
-def test_freshness_stamp_set_after_gap_fill(
+def test_freshness_stamp_set_after_fetch(
     mock_ohlcv, mock_nav, mock_load, mock_persist, mock_redis,
 ):
     fake = FakeRedis()
     mock_redis.return_value = fake
-    mock_load.side_effect = [[], _make_bars()]
+    mock_load.return_value = _make_bars()
     mock_ohlcv.return_value = _make_bars()
     mock_nav.return_value = []
 
@@ -375,3 +367,70 @@ def test_find_incomplete_single_db_query(mock_load):
         svc.find_incomplete('164906.SZ')
 
     assert mock_load.call_count == 1
+
+
+# ---------- NAV skip when OHLCV already provides NAV ----------
+
+
+@patch.object(service_module, 'get_redis_conn')
+@patch.object(service_module, 'persist_bars')
+@patch.object(service_module, 'load_bars_from_db')
+@patch.object(service_module, 'fetch_nav_from_chain')
+@patch.object(service_module, 'fetch_ohlcv_from_chain')
+def test_nav_fetch_skipped_when_ohlcv_bars_carry_nav(
+    mock_ohlcv, mock_nav, mock_load, mock_persist, mock_redis,
+):
+    """When OHLCV provider already populates nav (e.g. US ETFs), skip NAV chain."""
+    mock_redis.return_value = FakeRedis()
+    # OHLCV bars already have nav set (simulates YFinance nav=close for US ETFs)
+    bars_with_nav = [
+        OHLCVBar(date=date(2024, 1, 2), open=Decimal('28.00'), close=Decimal('28.50'),
+                 high=Decimal('29.00'), low=Decimal('27.80'), volume=5000,
+                 nav=Decimal('28.50')),
+        OHLCVBar(date=date(2024, 1, 3), open=Decimal('28.50'), close=Decimal('28.80'),
+                 high=Decimal('29.10'), low=Decimal('28.30'), volume=4500,
+                 nav=Decimal('28.80')),
+    ]
+    mock_load.return_value = bars_with_nav
+    mock_ohlcv.return_value = bars_with_nav
+
+    fund = MagicMock()
+    with _patch_fund_lookup(fund):
+        svc = HistoricalDataService()
+        result = svc.get_history('KWEB', range_key='1M')
+
+    # OHLCV was fetched
+    mock_ohlcv.assert_called_once()
+    # NAV chain was NOT called because bars already have nav
+    mock_nav.assert_not_called()
+    # Data still persisted and returned
+    mock_persist.assert_called_once()
+    assert len(result) == 2
+    assert result[0]['nav'] == 28.50
+
+
+@patch.object(service_module, 'get_redis_conn')
+@patch.object(service_module, 'persist_bars')
+@patch.object(service_module, 'load_bars_from_db')
+@patch.object(service_module, 'fetch_nav_from_chain')
+@patch.object(service_module, 'fetch_ohlcv_from_chain')
+def test_nav_fetch_called_when_ohlcv_bars_missing_nav(
+    mock_ohlcv, mock_nav, mock_load, mock_persist, mock_redis,
+):
+    """When OHLCV bars don't carry nav (e.g. CN ETFs), NAV chain is called."""
+    mock_redis.return_value = FakeRedis()
+    # OHLCV bars without nav (simulates AkShare for CN ETFs)
+    mock_load.return_value = _make_bars()
+    mock_ohlcv.return_value = _make_bars()  # nav=None by default
+    mock_nav.return_value = [
+        NAVPoint(date=date(2024, 1, 2), nav=Decimal('1.2345')),
+    ]
+
+    fund = MagicMock()
+    with _patch_fund_lookup(fund):
+        svc = HistoricalDataService()
+        svc.get_history('164906.SZ', range_key='1M')
+
+    # Both OHLCV and NAV chains called
+    mock_ohlcv.assert_called_once()
+    mock_nav.assert_called_once()

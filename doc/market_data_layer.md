@@ -88,7 +88,7 @@ Ordering in settings encodes preference (primary first). This is a simple chain-
 
 ### Historical Data Service (`service.py`)
 
-`HistoricalDataService` orchestrates a three-tier query flow: **Redis response cache → DB → provider gap-fill**.
+`HistoricalDataService` orchestrates a three-tier query flow: **Redis response cache → DB → provider fetch**.
 
 **`get_history(fund_code, range_key) -> list[dict]`** — single entry point for the API endpoint:
 
@@ -100,19 +100,20 @@ Ordering in settings encodes preference (primary first). This is a simple chain-
        HIT  -> return cached JSON
        MISS -> continue
 
-3. DB read: load existing bars from FundDailyData
+3. Fund lookup: if not in FundBasicInfo, return None
 
-4. Gap computation: identify missing date ranges
-       - Front gap: [start, db_min-1] if DB starts later (always filled)
-       - Back gap: [db_max+1, end] if DB ends earlier (gated by freshness TTL)
-       - Interior gaps: dates with NULL fields, collapsed into ranges (gated)
+4. Freshness check (per-symbol stamp, 1h TTL):
+       FRESH -> read DB, serialize, cache, return (no provider call)
+       STALE -> continue
 
-5. For each gap: fetch OHLCV + NAV from providers, persist to DB
+5. Fetch full date range from providers (OHLCV + NAV), upsert to DB, mark fresh
 
-6. Re-read DB, serialize, cache in Redis with HISTORY_CACHE_TTL (default 24h)
+6. Read DB, serialize, cache in Redis with HISTORY_CACHE_TTL (default 24h)
 ```
 
-A per-symbol freshness stamp (`mktdata:{symbol}:last_check_at`, 1h TTL) gates back-gap and interior-gap fetches to avoid hammering providers when they simply don't have the data.
+The full-range fetch approach is simpler and costs the same as fetching individual gaps — providers like Yahoo Finance and AkShare return all data in one API call regardless of range size. The `persist_bars` upsert only writes new or changed rows, so re-fetching existing data is a no-op.
+
+A per-symbol freshness stamp (`mktdata:{symbol}:last_check_at`, 1h TTL) prevents redundant provider calls (e.g. on holidays or weekends when no new data exists).
 
 ### Configuration (`settings.py`)
 
