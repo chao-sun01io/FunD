@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from django.conf import settings
@@ -22,6 +23,38 @@ RANGE_DAYS = {
     '1Y': 365,
     'all': None,
 }
+
+
+@dataclass
+class IncompleteReport:
+    """Summary of rows with NULL fields for a fund."""
+    fund_code: str
+    total_rows: int = 0
+    incomplete_rows: int = 0
+    field_nulls: dict[str, int] = field(default_factory=dict)
+    ranges: list[tuple[date, date]] = field(default_factory=list)
+
+    @property
+    def is_complete(self) -> bool:
+        return self.incomplete_rows == 0
+
+
+def _collapse_dates(dates: list[date], tolerance_days: int = 5) -> list[tuple[date, date]]:
+    """Collapse a sorted list of dates into contiguous ranges with a gap tolerance."""
+    if not dates:
+        return []
+    ranges = []
+    start = dates[0]
+    prev = dates[0]
+    for d in dates[1:]:
+        if (d - prev).days <= tolerance_days:
+            prev = d
+        else:
+            ranges.append((start, prev))
+            start = d
+            prev = d
+    ranges.append((start, prev))
+    return ranges
 
 
 def _range_start(range_key: str) -> date | None:
@@ -57,30 +90,60 @@ def _merge_nav(bars: list[OHLCVBar], nav_points: list[NAVPoint]) -> None:
             bar.nav = nav
 
 
+_ALL_FIELDS: tuple[str, ...] = ('open', 'high', 'low', 'close', 'volume', 'nav')
+
+
+def _incomplete_dates(
+    bars: list[OHLCVBar],
+    fields: tuple[str, ...] | list[str] | None = None,
+) -> list[date]:
+    """Dates among loaded bars that have at least one NULL field.
+
+    `fields`: subset of OHLCVBar fields to check. Defaults to all six.
+    """
+    check = fields if fields is not None else _ALL_FIELDS
+    return [
+        bar.date for bar in bars
+        if any(getattr(bar, f) is None for f in check)
+    ]
+
+
 def _compute_gaps(
-    existing_dates: set[date],
+    bars: list[OHLCVBar],
     start: date,
     end: date,
     back_gap_allowed: bool,
 ) -> list[tuple[date, date]]:
     """Return the ranges to fetch from providers.
 
+    Three sources, merged:
     - DB empty → one gap = (start, end)
-    - Otherwise: front gap [start, db_min-1] if db_min > start (always)
-                 back gap [db_max+1, end] if db_max < end AND back_gap_allowed
+    - Front gap [start, db_min-1] if db_min > start (always honored)
+    - Back gap [db_max+1, end] if db_max < end (gated on back_gap_allowed)
+    - Incomplete-row ranges: dates within [db_min, db_max] where any field is
+      NULL, collapsed into contiguous ranges (gated on back_gap_allowed — same
+      rationale as back gap: avoid hammering providers within the freshness
+      window if they just couldn't supply the data)
     """
-    if not existing_dates:
+    if not bars:
         return [(start, end)]
 
-    gaps: list[tuple[date, date]] = []
+    existing_dates = {bar.date for bar in bars}
     db_min = min(existing_dates)
     db_max = max(existing_dates)
+
+    gaps: list[tuple[date, date]] = []
 
     if db_min > start:
         gaps.append((start, db_min - timedelta(days=1)))
 
-    if back_gap_allowed and db_max < end:
-        gaps.append((db_max + timedelta(days=1), end))
+    if back_gap_allowed:
+        incomplete = _incomplete_dates(bars)
+        if incomplete:
+            gaps.extend(_collapse_dates(sorted(incomplete)))
+
+        if db_max < end:
+            gaps.append((db_max + timedelta(days=1), end))
 
     return gaps
 
@@ -167,11 +230,10 @@ class HistoricalDataService:
 
         # Tier 2: DB read
         bars = load_bars_from_db(fund, start, end)
-        existing_dates = {bar.date for bar in bars}
 
-        # Tier 3: gap computation & fill
+        # Tier 3: gap computation & fill (edge gaps + incomplete-row ranges)
         back_gap_allowed = not _is_fresh(redis, symbol)
-        gaps = _compute_gaps(existing_dates, start, end, back_gap_allowed)
+        gaps = _compute_gaps(bars, start, end, back_gap_allowed)
 
         if gaps:
             for gap_start, gap_end in gaps:
@@ -188,6 +250,60 @@ class HistoricalDataService:
         data = [_bar_to_dict(bar) for bar in bars]
         self._write_response_cache(redis, cache_key, data)
         return data
+
+    def find_incomplete(
+        self,
+        fund_code: str,
+        start: date | None = None,
+        end: date | None = None,
+        fields: list[str] | tuple[str, ...] | None = None,
+    ) -> 'IncompleteReport':
+        """Find DB rows with NULL fields and return date ranges that need re-fetching.
+
+        Args:
+            fund_code: Fund code to check.
+            start: Start date (defaults to 1 year ago).
+            end: End date (defaults to today).
+            fields: Which fields to check for NULLs. Defaults to all OHLCV + nav.
+                    Valid: 'open', 'high', 'low', 'close', 'volume', 'nav'.
+
+        Returns:
+            IncompleteReport with per-field breakdown and collapsed date ranges.
+
+        One DB query (`load_bars_from_db`); all analysis is done in Python.
+        """
+        from info.models import FundBasicInfo
+
+        symbol = fund_code.upper()
+        fund = FundBasicInfo.objects.filter(fund_code=symbol).first()
+        if fund is None:
+            return IncompleteReport(fund_code=symbol)
+
+        if start is None:
+            start = date.today() - timedelta(days=365)
+        if end is None:
+            end = date.today()
+
+        check_fields = tuple(fields) if fields else _ALL_FIELDS
+        invalid = set(check_fields) - set(_ALL_FIELDS)
+        if invalid:
+            raise ValueError(f"Unknown fields: {invalid}. Valid: {_ALL_FIELDS}")
+
+        bars = load_bars_from_db(fund, start, end)
+        incomplete_dates = sorted(_incomplete_dates(bars, check_fields))
+
+        field_nulls = {
+            f: count for f in check_fields
+            if (count := sum(1 for b in bars if getattr(b, f) is None))
+        }
+
+        return IncompleteReport(
+            fund_code=symbol,
+            total_rows=len(bars),
+            incomplete_rows=len(incomplete_dates),
+            field_nulls=field_nulls,
+            ranges=_collapse_dates(incomplete_dates),
+        )
 
     @staticmethod
     def _write_response_cache(redis, cache_key: str, data: list[dict]) -> None:

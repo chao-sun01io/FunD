@@ -8,6 +8,7 @@ from info.market_data import service as service_module
 from info.market_data.base import NAVPoint, OHLCVBar, ProviderError
 from info.market_data.service import (
     HistoricalDataService,
+    IncompleteReport,
     _bar_to_dict,
     _merge_nav,
 )
@@ -273,3 +274,104 @@ def test_freshness_stamp_set_after_gap_fill(
         svc.get_history('164906.SZ', range_key='1M')
 
     assert 'mktdata:164906.SZ:last_check_at' in fake.store
+
+
+# ---------- HistoricalDataService.find_incomplete ----------
+
+
+def _bar(d: date, **overrides) -> OHLCVBar:
+    """A complete bar by default; pass field=None to make it incomplete."""
+    defaults = dict(
+        open=Decimal('10'), high=Decimal('11'), low=Decimal('9'),
+        close=Decimal('10.5'), volume=1000, nav=Decimal('1.05'),
+    )
+    defaults.update(overrides)
+    return OHLCVBar(date=d, **defaults)
+
+
+def test_find_incomplete_fund_not_in_db_returns_empty_report():
+    with _patch_fund_lookup(None):
+        svc = HistoricalDataService()
+        report = svc.find_incomplete('GHOST')
+
+    assert report == IncompleteReport(fund_code='GHOST')
+    assert report.is_complete  # incomplete_rows == 0
+
+
+@patch.object(service_module, 'load_bars_from_db')
+def test_find_incomplete_all_complete(mock_load):
+    mock_load.return_value = [
+        _bar(date(2024, 1, 2)),
+        _bar(date(2024, 1, 3)),
+    ]
+    with _patch_fund_lookup(MagicMock()):
+        svc = HistoricalDataService()
+        report = svc.find_incomplete('164906.SZ')
+
+    assert report.total_rows == 2
+    assert report.incomplete_rows == 0
+    assert report.field_nulls == {}
+    assert report.ranges == []
+    assert report.is_complete
+
+
+@patch.object(service_module, 'load_bars_from_db')
+def test_find_incomplete_per_field_counts(mock_load):
+    mock_load.return_value = [
+        _bar(date(2024, 1, 2), nav=None),
+        _bar(date(2024, 1, 3), nav=None, volume=None),
+        _bar(date(2024, 1, 4)),
+    ]
+    with _patch_fund_lookup(MagicMock()):
+        svc = HistoricalDataService()
+        report = svc.find_incomplete('164906.SZ')
+
+    assert report.total_rows == 3
+    assert report.incomplete_rows == 2
+    assert report.field_nulls == {'nav': 2, 'volume': 1}
+    assert report.ranges == [(date(2024, 1, 2), date(2024, 1, 3))]
+    assert not report.is_complete
+
+
+@patch.object(service_module, 'load_bars_from_db')
+def test_find_incomplete_field_filter_excludes_others(mock_load):
+    # Row has volume=None, but we only check 'nav' — so it counts as complete.
+    mock_load.return_value = [
+        _bar(date(2024, 1, 2), volume=None),
+    ]
+    with _patch_fund_lookup(MagicMock()):
+        svc = HistoricalDataService()
+        report = svc.find_incomplete('164906.SZ', fields=['nav'])
+
+    assert report.incomplete_rows == 0
+    assert report.field_nulls == {}
+
+
+@patch.object(service_module, 'load_bars_from_db')
+def test_find_incomplete_invalid_field_raises(mock_load):
+    mock_load.return_value = []
+    with _patch_fund_lookup(MagicMock()):
+        svc = HistoricalDataService()
+        with pytest.raises(ValueError, match="Unknown fields"):
+            svc.find_incomplete('164906.SZ', fields=['bogus'])
+
+
+@patch.object(service_module, 'load_bars_from_db')
+def test_find_incomplete_uppercases_symbol(mock_load):
+    mock_load.return_value = []
+    with _patch_fund_lookup(MagicMock()):
+        svc = HistoricalDataService()
+        report = svc.find_incomplete('164906.sz')
+
+    assert report.fund_code == '164906.SZ'
+
+
+@patch.object(service_module, 'load_bars_from_db')
+def test_find_incomplete_single_db_query(mock_load):
+    """Refactor invariant: only one DB read for all the analysis."""
+    mock_load.return_value = [_bar(date(2024, 1, 2), nav=None)]
+    with _patch_fund_lookup(MagicMock()):
+        svc = HistoricalDataService()
+        svc.find_incomplete('164906.SZ')
+
+    assert mock_load.call_count == 1

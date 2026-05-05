@@ -1,11 +1,10 @@
-from datetime import timedelta
-
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
 from info.market_data.base import ProviderError
 from info.market_data.persistence import persist_bars
 from info.market_data.registry import fetch_nav_from_chain, fetch_ohlcv_from_chain
+from info.market_data.service import _collapse_dates
 from info.models import FundBasicInfo, FundDailyData
 
 
@@ -129,18 +128,4 @@ class Command(BaseCommand):
         return total
 
     def _collapse_dates(self, dates):
-        """Collapse a sorted list of dates into contiguous ranges (with 5-day tolerance)."""
-        if not dates:
-            return []
-        ranges = []
-        start = dates[0]
-        prev = dates[0]
-        for d in dates[1:]:
-            if (d - prev).days <= 5:
-                prev = d
-            else:
-                ranges.append((start, prev))
-                start = d
-                prev = d
-        ranges.append((start, prev))
-        return ranges
+        return _collapse_dates(dates)
