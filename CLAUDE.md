@@ -86,6 +86,10 @@ uv add <package>
 uv add --dev <package>
 ```
 
+### Commit rules
+
+-  Think whether to commit current changes before switching to a different or less related topic.
+
 ## Architecture
 
 Five Docker services: `web` (Django on port 8000), `celery` (worker), `celery-beat` (scheduler), `db` (PostgreSQL 17), `redis` (port 6380→6379).
