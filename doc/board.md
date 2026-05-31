@@ -10,7 +10,7 @@
 - [x] 4. Implement NAV fetching and storage (daily end-of-day NAV + intraday estimated NAV), and display it on the chart
    - [x] backfill historical daily data when (OHLCV + NAV) is missing for a date, to be done as a one-off data migration script or a temporary admin command. After the backfill, the regular daily task will keep the data up to date.
 
-- [ ] 5. For 1D time range, use the 1-min intraday data. For longer ranges (5D, 1M, 3M, YTD, 1Y), use the historical OHLCV data
+- [ ] 5. For 1D time range, use the 1-min intraday data. For longer ranges (1M, 3M, YTD, 1Y), use the historical OHLCV data
 - [ ] 8. Query Fund basic info from API and store it in DB, to be displayed on the info page and used for chart rendering (e.g. currency for Y-axis formatting)
 
 ## Goals

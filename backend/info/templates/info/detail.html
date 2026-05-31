@@ -370,7 +370,6 @@
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                     <div class="chart-controls" style="margin-bottom:0;">
                         <button class="time-btn" data-range="1D">1D</button>
-                        <button class="time-btn" data-range="5D">5D</button>
                         <button class="time-btn" data-range="1M">1M</button>
                         <button class="time-btn" data-range="3M">3M</button>
                         <button class="time-btn" data-range="YTD">YTD</button>
@@ -558,7 +557,6 @@
             let from;
             switch (rangeKey) {
                 case '1D':  from = shiftDate(lastDate, 0, 1);   break;
-                case '5D':  from = shiftDate(lastDate, 0, 7);   break;
                 case '1M':  from = shiftDate(lastDate, 1);       break;
                 case '3M':  from = shiftDate(lastDate, 3);       break;
                 case 'YTD': from = `${lastDate.getFullYear()}-01-01`; break;
@@ -647,7 +645,6 @@
             const lastDateStr = lastEntry.time;
             let from;
             switch (rangeKey) {
-                case '5D':  from = shiftDate(lastDate, 0, 7);   break;
                 case '1M':  from = shiftDate(lastDate, 1);       break;
                 case '3M':  from = shiftDate(lastDate, 3);       break;
                 case 'YTD': from = `${lastDate.getFullYear()}-01-01`; break;
