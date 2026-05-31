@@ -128,46 +128,7 @@
             letter-spacing: 0.04em;
         }
         .market-info .value { font-weight: 600; color: #333; }
-        
-        .daily-data-section {
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 2px solid #e0e0e0;
-        }
-        .daily-data-section h2 {
-            color: #333;
-            margin-bottom: 20px;
-            font-size: 1.5em;
-        }
-        .table-container {
-            overflow-x: auto;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .daily-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-        }
-        .daily-table th {
-            background: #2196F3;
-            color: white;
-            padding: 12px 8px;
-            text-align: center;
-            font-weight: bold;
-            font-size: 0.9em;
-        }
-        .daily-table td {
-            padding: 10px 8px;
-            text-align: center;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        .daily-table tr:nth-child(even) {
-            background: #f8f9fa;
-        }
-        .daily-table tr:hover {
-            background: #e3f2fd;
-        }
+
         .no-data-section {
             margin-top: 40px;
             padding: 20px;
@@ -429,28 +390,6 @@
         </div>
         {% endif %}
 
-        <div class="daily-data-section" id="daily-data-section">
-            <h2>Recent Daily Data</h2>
-            <div class="table-container">
-                <table class="daily-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Open</th>
-                            <th>Close</th>
-                            <th>High</th>
-                            <th>Low</th>
-                            <th>NAV</th>
-                            <th>Volume</th>
-                        </tr>
-                    </thead>
-                    <tbody id="daily-data-tbody">
-                        <tr><td colspan="7" style="text-align:center;color:#999;">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
         <a href="{% url 'index' %}" class="back-link">← Back to Fund List</a>
     </div>
 
@@ -613,22 +552,6 @@
             navSeries.setData([]);  // no NAV for intraday
             volumeSeries.setData(data.map(d => ({ time: d.time, value: d.volume || 0 })));
             chart.timeScale().fitContent();
-            // Update table with intraday data (last 10 bars)
-            const recent = data.slice(-10).reverse();
-            const fmt = (v, d=4) => v != null ? Number(v).toFixed(d) : '-';
-            const fmtVol = v => v != null ? Number(v).toLocaleString() : '-';
-            const fmtTime = ts => fmtMarketTime(ts);
-            const tbody = document.getElementById('daily-data-tbody');
-            tbody.innerHTML = recent.map(d => `
-                <tr>
-                    <td>${fmtTime(d.time)}</td>
-                    <td>${fmt(d.open)}</td>
-                    <td>${fmt(d.close)}</td>
-                    <td>${fmt(d.high)}</td>
-                    <td>${fmt(d.low)}</td>
-                    <td>-</td>
-                    <td>${fmtVol(d.volume)}</td>
-                </tr>`).join('');
         }
 
         function renderDaily(data, rangeKey) {
@@ -652,23 +575,6 @@
                 default:    from = shiftDate(lastDate, 3);
             }
             chart.timeScale().setVisibleRange({ from, to: lastDateStr });
-
-            // Populate recent daily data table
-            const recent = data.slice(-10).reverse();
-            const fmt = (v, d=4) => v != null ? Number(v).toFixed(d) : '-';
-            const fmtVol = v => v != null ? Number(v).toLocaleString() : '-';
-            const fmtDate = s => new Date(s + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
-            const tbody = document.getElementById('daily-data-tbody');
-            tbody.innerHTML = recent.map(d => `
-                <tr>
-                    <td>${fmtDate(d.time)}</td>
-                    <td>${fmt(d.open)}</td>
-                    <td>${fmt(d.close)}</td>
-                    <td>${fmt(d.high)}</td>
-                    <td>${fmt(d.low)}</td>
-                    <td>${fmt(d.nav)}</td>
-                    <td>${fmtVol(d.volume)}</td>
-                </tr>`).join('');
         }
 
         // Wire up time range buttons
