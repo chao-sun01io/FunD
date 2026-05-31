@@ -52,7 +52,13 @@ HISTORICAL_PROVIDERS = [
 NAV_PROVIDERS = [
     'info.market_data.providers.eastmoney_nav_provider.EastMoneyNAVProvider',
 ]
+INTRADAY_PROVIDERS = [
+    'info.market_data.providers.yfinance_provider.YFinanceProvider',
+]
 HISTORY_CACHE_TTL = 60 * 60 * 24  # 24 hours
+
+# Symbols to poll for intraday 1-min bars via Celery
+INTRADAY_SYMBOLS = ['KWEB']
 # ====== End of Market Data Provider Configuration =====
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

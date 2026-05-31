@@ -8,16 +8,17 @@
     - It can be a simple API endpoint that returns hardcoded JSON data for now, to be replaced with real DB queries in the future. 
 - [x] 3. Implement MarketDataProvider for historical OHLCV data
 - [x] 4. Implement NAV fetching and storage (daily end-of-day NAV + intraday estimated NAV), and display it on the chart
-   - [] backfill historical daily data when (OHLCV + NAV) is missing for a date, to be done as a one-off data migration script or a temporary management command. After the backfill, the regular daily task will keep the data up to date.
-   
+   - [x] backfill historical daily data when (OHLCV + NAV) is missing for a date, to be done as a one-off data migration script or a temporary admin command. After the backfill, the regular daily task will keep the data up to date.
+
 - [ ] 5. For 1D time range, use the 1-min intraday data. For longer ranges (5D, 1M, 3M, YTD, 1Y), use the historical OHLCV data
-- [ ] 6. For 1D time range, use the 1-min intraday data. For longer ranges (5D, 1M, 3M, YTD, 1Y), use the historical OHLCV data
-- [ ] 7. For historical data, buffer the data in DataBase
 - [ ] 8. Query Fund basic info from API and store it in DB, to be displayed on the info page and used for chart rendering (e.g. currency for Y-axis formatting)
 
 ## Goals
-- [ ] Goal 1: Implement the basic fund display functionality
+- [] Goal 1: Implement the basic fund display functionality
 - [ ] Goal 2: Implement the Est.Nav / premium discount to discover trading opportunities
+
+## Bug
+- [x] When yesterday's NAV is missing, the data service did not backfill it from the provider, as it has cached or in the db table. Check the fields and fill the missing gaps
 
 ## Backlog
 - Tidy up: restructure the directory, move nginx and scripts to backend/ for better organization.

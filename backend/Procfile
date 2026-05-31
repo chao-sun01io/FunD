@@ -1,0 +1,2 @@
+worker: uv run celery -A config worker --loglevel=debug
+beat:   uv run celery -A config beat --loglevel=debug

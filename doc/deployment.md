@@ -21,14 +21,18 @@ sudo usermod -aG docker $USER
 
 The production compose sets `mem_limit` per service. Approximate usage at idle:
 
-| Service    | Limit  | Typical |
-|------------|--------|---------|
-| web        | 300 MB | ~150 MB |
-| db         | 256 MB | ~80 MB  |
-| redis      | 96 MB  | ~10 MB  |
-| nginx      | 64 MB  | ~5 MB   |
-| certbot    | 96 MB  | ~0 (sleeps) |
-| **Total**  | **812 MB** | **~245 MB** |
+| Service     | Limit  | Typical |
+|-------------|--------|---------|
+| web         | 300 MB | ~150 MB |
+| celery      | 256 MB | ~120 MB |
+| celery-beat | 128 MB | ~60 MB  |
+| db          | 256 MB | ~80 MB  |
+| redis       | 96 MB  | ~10 MB  |
+| nginx       | 64 MB  | ~5 MB   |
+| certbot     | 96 MB  | ~0 (sleeps) |
+| **Total**   | **1196 MB** | **~425 MB** |
+
+The `celery` worker runs scheduled background tasks (e.g. `poll_live_quotes`); `celery-beat` is the scheduler that triggers them. Both are required for the live-price pipeline to function in production.
 
 With 1GB RAM + 1GB swap this leaves headroom for the OS and Docker overhead.
 
@@ -87,11 +91,11 @@ Your site should now be live at `https://yourdomain.com`.
 ```bash
 cd /opt/fund
 git pull origin main
-docker compose -f docker-compose.prod.yml up -d --build web
+docker compose -f docker-compose.prod.yml up -d --build web celery celery-beat
 docker compose -f docker-compose.prod.yml exec web python manage.py migrate
 ```
 
-Only the app containers are rebuilt; db, redis, and nginx continue running.
+Only the app containers (web + celery + celery-beat) are rebuilt; db, redis, and nginx continue running.
 
 ## SSL Certificate Renewal
 
@@ -149,6 +153,7 @@ docker compose -f docker-compose.prod.yml logs -f
 # Follow specific service logs
 docker compose -f docker-compose.prod.yml logs -f web
 docker compose -f docker-compose.prod.yml logs -f celery
+docker compose -f docker-compose.prod.yml logs -f celery-beat
 docker compose -f docker-compose.prod.yml logs -f nginx
 
 # Check resource usage

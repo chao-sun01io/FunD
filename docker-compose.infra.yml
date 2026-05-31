@@ -1,25 +1,13 @@
-# Hybrid dev workflow: start only infrastructure services locally.
-# Run Django and Celery as local processes (see backend/.env.local.example).
+# Hybrid dev workflow: start only Redis locally.
+# Django + Celery worker + Beat run as host processes via honcho (see backend/Procfile).
+# Database defaults to SQLite (USE_POSTGRES=False in backend/.env).
 #
 # Usage:
 #   docker-compose -f docker-compose.infra.yml up -d
+#   cd backend && uv run honcho start
 #   docker-compose -f docker-compose.infra.yml down
 
 services:
-  db:
-    image: postgres:17-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    ports:
-      - "5432:5432"
-    env_file: ./backend/.env
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:latest
     ports:
@@ -30,6 +18,3 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
-volumes:
-  postgres_data:

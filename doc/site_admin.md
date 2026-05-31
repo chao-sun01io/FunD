@@ -60,3 +60,15 @@ Manually trigger Celery tasks (PCF fetch + live price fetch) for testing.
 ```bash
 uv run python manage.py trigger_celery_task
 ```
+
+## Data Sources
+
+### `sina_quote`
+
+Probe `get_quotes_from_sina_us` directly from the CLI — useful for checking whether
+the upstream is reachable, what fields it returns, and whether a symbol is supported.
+
+```bash
+uv run python manage.py sina_quote KWEB AAPL          # formatted table
+uv run python manage.py sina_quote KWEB --json        # raw JSON
+```

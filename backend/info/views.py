@@ -1,59 +1,68 @@
-from django.http import HttpResponse
+import json
+import logging
+from zoneinfo import ZoneInfo
+
 from django.shortcuts import render, get_object_or_404
-from .utils import redis_conn
-from .models import FundBasicInfo
+
+from .market_data.market_hours import market_status
+from .models import FundBasicInfo, FundDailyData
+from .utils.redis_conn import get_redis_conn
+
+logger = logging.getLogger(__name__)
+
 
 def index(request):
     funds = FundBasicInfo.objects.all()
     return render(request, 'info/index.html', {'funds': funds})
 
+
 def detail(request, symbol):
-    '''
-    This view is used to display the detail of a fund.
+    fund = get_object_or_404(FundBasicInfo, fund_code=symbol.upper())
 
-    args:
-        symbol: the symbol of the fund
+    # Get latest tick from Redis (written by poll_live_quotes task)
+    redis_client = get_redis_conn()
+    tick_key = f"tick:{symbol.upper()}:latest"
+    tick_raw = redis_client.get(tick_key)
 
-    returns:
-        a HTML page with the detail of the fund
-    '''
+    latest_price = None
+    if tick_raw:
+        try:
+            if isinstance(tick_raw, bytes):
+                tick_raw = tick_raw.decode('utf-8')
+            tick = json.loads(tick_raw)
+            latest_price = {
+                'price': tick.get('price'),
+                'change': tick.get('change'),
+                'timestamp': tick.get('ts'),
+            }
+        except (json.JSONDecodeError, AttributeError) as e:
+            logger.warning("Failed to parse tick for %s: %s", symbol, e)
+
+    # Market status (open/closed, next open/close, last trading session)
+    status = market_status(fund.listing_exchange)
     try:
-        fund = FundBasicInfo.objects.get(fund_code=symbol.upper())
-        
-        # Get latest price data from Redis
-        redis_client = redis_conn.get_redis_conn()
-        if not redis_client:
-            return render(request, '404.html', status=404)
-        latest_quote_key = f"info:{symbol.lower()}:latest_quote"
-        latest_quote_raw = redis_client.get(latest_quote_key)
-        
-        latest_price = None
-        if latest_quote_raw:
-            print(latest_quote_raw)
-            try:
-                # Parse the quote data (stored as Python dict string)
-                import ast
-                decoded_data = latest_quote_raw.decode('utf-8')
-                parsed_data = ast.literal_eval(decoded_data)
-                
-                # Extract KWEB data from the dictionary
-                if 'KWEB' in parsed_data:
-                    kweb_data = parsed_data['KWEB']
-                    latest_price = {
-                        'price': kweb_data.get('price'),
-                        'change': kweb_data.get('change'),
-                        # 'change_percent': (kweb_data.get('change', 0) / kweb_data.get('overnight_price', 1)) * 100 if kweb_data.get('overnight_price') else 0,
-                        'timestamp': kweb_data.get('datetime')
-                    }
-                print(latest_price)
-            except (ValueError, SyntaxError, AttributeError) as e:
-                print(f"Error parsing data: {e}")
-                # If parsing fails, treat it as a simple string
-                latest_price = {'price': latest_quote_raw.decode('utf-8')}
-        
-        return render(request, 'info/detail.html', {
-            'fund': fund,
-            'latest_price': latest_price
-        })
-    except FundBasicInfo.DoesNotExist:
-        return render(request, '404.html', status=404)
+        tz = ZoneInfo(fund.market_timezone)
+    except Exception:
+        tz = None
+    if tz is not None:
+        # Pre-format in the exchange's local tz — Django's |date filter would
+        # otherwise re-convert tz-aware datetimes back to settings.TIME_ZONE.
+        for key in ('next_open', 'next_close'):
+            if status.get(key) is not None:
+                local = status[key].astimezone(tz)
+                status[f'{key}_display'] = local.strftime('%b %-d, %H:%M')
+
+    # Last close from the most recent FundDailyData row
+    last_daily = (
+        FundDailyData.objects
+        .filter(fund=fund, close__isnull=False)
+        .order_by('-date')
+        .first()
+    )
+
+    return render(request, 'info/detail.html', {
+        'fund': fund,
+        'latest_price': latest_price,
+        'market_status': status,
+        'last_daily': last_daily,
+    })

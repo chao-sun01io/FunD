@@ -18,16 +18,16 @@ app.autodiscover_tasks()
 
 # Worker Configuration
 app.conf.update(
-    worker_concurrency=4,  # Number of worker processes
+    worker_concurrency=2,  # Number of worker processes
     worker_max_tasks_per_child=1000,  # Restart worker after 1000 tasks
     worker_prefetch_multiplier=1,  # Don't prefetch tasks
 )
 
 # TODO: use django-celery-beat to manage the schedule in database
 app.conf.beat_schedule = {
-    'fetch-kweb-price-every-15-seconds': {
-        'task': 'info.tasks.fetch_kweb_price',
-        'schedule': 15.0,  # Run every 15 seconds
+    'poll-live-quotes-every-15s': {
+        'task': 'info.tasks.poll_live_quotes',
+        'schedule': 15.0,
     },
 }
 

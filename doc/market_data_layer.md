@@ -34,7 +34,7 @@ info/market_data/
         yfinance_provider.py       # YFinanceProvider          (OHLCV, US; nav=close)
         akshare_provider.py        # AkShareProvider           (OHLCV, CN)
         eastmoney_nav_provider.py  # EastMoneyNAVProvider      (NAV, CN only)
-    data_api.py                    # Legacy Sina wrapper for live quotes
+    data_api.py                    # Sina Finance API (live quotes for intraday polling)
 ```
 
 ### Abstract Interfaces (`base.py`)
@@ -115,6 +115,29 @@ The full-range fetch approach is simpler and costs the same as fetching individu
 
 A per-symbol freshness stamp (`mktdata:{symbol}:last_check_at`, 1h TTL) prevents redundant provider calls (e.g. on holidays or weekends when no new data exists).
 
+### Intraday 1-Minute Bars (Poll & Accumulate)
+
+Real-time intraday data for the 1D chart view, built from Sina Finance polling.
+
+**Architecture:**
+```
+Celery Beat (every 15s) → poll_live_quotes task
+    → Sina Finance API (batch quote for all INTRADAY_SYMBOLS)
+    → Buffer latest tick: tick:{symbol}:latest (JSON, 1-day TTL)
+    → Aggregate into 1-min bar: price:{symbol}:1m:{YYYY-MM-DD} hash (2-day TTL)
+        field = HH:MM, value = {"o", "h", "l", "c", "v"}
+```
+
+**Bar aggregation logic (per 15s poll):**
+- If bar exists for current minute: `h = max(h, price)`, `l = min(l, price)`, `c = price`
+- If new minute: `o = h = l = c = price`
+
+**Service:** `HistoricalDataService.get_intraday(fund_code)` reads Redis hash, returns sorted list of `{time: unix_ts, open, high, low, close, volume}`.
+
+**API:** `GET /info/{symbol}/history?range=1D` routes to `get_intraday()`.
+
+**Frontend:** When 1D is selected, chart switches to time-visible mode (shows HH:MM). User refreshes manually to get latest data.
+
 ### Configuration (`settings.py`)
 
 ```python
@@ -127,11 +150,12 @@ NAV_PROVIDERS = [
     'info.market_data.providers.eastmoney_nav_provider.EastMoneyNAVProvider',
 ]
 HISTORY_CACHE_TTL = 60 * 60 * 24    # 24 hours
+
+# Symbols to poll for intraday 1-min bars
+INTRADAY_SYMBOLS = ['KWEB']
 ```
 
 ## Backlog
 - Add support for more data sources
-- Live quote abstraction: `LiveQuoteProvider` ABC + `SinaFinanceProvider` (migrate from `data_api.py`), with `LiveQuote` dataclass (`symbol, price, change, timestamp, extra: dict`)
-- Intraday abstraction (`live.py`): `IntradaySource` ABC with `PollingIntradaySource` (Celery Beat) and `WebSocketIntradaySource` (future). Both converge on the same Redis state — `latest()` always reads from Redis, the difference is only how data gets into Redis (Celery task = write side, IntradaySource = read side)
+- WebSocket feed for real-time frontend updates without manual page refresh
 - If the volume grows significantly we can consider using a time-series database like TimescaleDB for better performance and advanced features
-- Frontend: WebSocket feed for real-time updates without page refresh

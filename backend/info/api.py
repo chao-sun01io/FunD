@@ -21,3 +21,16 @@ def fund_history(request, symbol: str):
         return JsonResponse({"error": "Internal error"}, status=500)
 
     return JsonResponse({"symbol": symbol.upper(), "data": data})
+
+
+def fund_intraday(request, symbol: str):
+    if request.method != 'GET':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = _service.get_intraday(fund_code=symbol)
+    except Exception:
+        logger.exception("Error fetching intraday for %s", symbol)
+        return JsonResponse({"error": "Internal error"}, status=500)
+
+    return JsonResponse({"symbol": symbol.upper(), "data": data})

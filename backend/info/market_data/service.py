@@ -7,7 +7,11 @@ from django.conf import settings
 
 from info.market_data.base import NAVPoint, OHLCVBar, ProviderError
 from info.market_data.persistence import load_bars_from_db, persist_bars
-from info.market_data.registry import fetch_nav_from_chain, fetch_ohlcv_from_chain
+from info.market_data.registry import (
+    fetch_intraday_from_chain,
+    fetch_nav_from_chain,
+    fetch_ohlcv_from_chain,
+)
 from info.utils.redis_conn import get_redis_conn
 
 logger = logging.getLogger(__name__)
@@ -301,7 +305,147 @@ class HistoricalDataService:
             ranges=_collapse_dates(incomplete_dates),
         )
 
+    def get_intraday(self, fund_code: str) -> list[dict]:
+        """Read 1-min bars from Redis.
+
+        - Market open  → return today's bars; mark interest so the Celery poller
+          keeps refreshing this symbol (lazy polling, 5-min TTL).
+        - Market closed → return the most recent trading session's bars (looked
+          up via `exchange_calendars`). No interest marker — nothing to poll.
+
+        Returns list of dicts with unix timestamps suitable for LightweightCharts.
+        """
+        from info.market_data.market_hours import is_market_open, last_session
+        from info.models import FundBasicInfo
+        from info.tasks import mark_interest
+
+        symbol = fund_code.upper()
+        redis = get_redis_conn()
+
+        fund = FundBasicInfo.objects.filter(fund_code=symbol).first()
+        exchange = fund.listing_exchange if fund else None
+
+        logger.debug("get_intraday for %s (exchange: %s)", symbol, exchange)
+
+        if exchange and is_market_open(exchange, include_extended=True):
+            mark_interest(redis, symbol)
+            # Live: Redis-only — the poller is filling this hash every 15s.
+            return self._read_intraday_bars(redis, symbol, date.today())
+
+        # Closed: serve the last trading session. Redis first, provider fallback
+        # (cached back to Redis) if missing.
+        bar_date = last_session(exchange)
+        if bar_date is None:
+            return []
+
+        return self._read_intraday_bars(redis, symbol, bar_date, allow_provider_fallback=True)
+
+    @staticmethod
+    def _read_intraday_bars(
+        redis,
+        symbol: str,
+        bar_date: date,
+        allow_provider_fallback: bool = False,
+    ) -> list[dict]:
+        """Parse Redis hash of 1-min bars into sorted list of dicts.
+
+        If Redis has no bars for `bar_date` and `allow_provider_fallback=True`,
+        fetch 1-min bars from the data provider (yfinance) and write them back
+        to Redis using the same hash schema as `poll_live_quotes`.
+        """
+        key = f'price:{symbol}:1m:{bar_date.isoformat()}'
+        raw_bars = redis.hgetall(key)
+        if not raw_bars:
+            if not allow_provider_fallback:
+                return []
+            bars = HistoricalDataService._fetch_intraday_from_provider(symbol, bar_date)
+            if not bars:
+                return []
+            HistoricalDataService._cache_intraday_to_redis(redis, symbol, bar_date, bars)
+            return bars
+
+        from datetime import datetime, timezone
+        bars = []
+        for time_slot, bar_json in raw_bars.items():
+            if isinstance(time_slot, bytes):
+                time_slot = time_slot.decode()
+            if isinstance(bar_json, bytes):
+                bar_json = bar_json.decode()
+
+            bar = json.loads(bar_json)
+            # Build unix timestamp from date + HH:MM
+            dt = datetime.strptime(
+                f'{bar_date.isoformat()} {time_slot}',
+                '%Y-%m-%d %H:%M',
+            ).replace(tzinfo=timezone.utc)
+
+            bars.append({
+                'time': int(dt.timestamp()),
+                'open': bar['o'],
+                'high': bar['h'],
+                'low': bar['l'],
+                'close': bar['c'],
+                'volume': bar.get('v'),
+            })
+
+        bars.sort(key=lambda b: b['time'])
+        return bars
+
     @staticmethod
     def _write_response_cache(redis, cache_key: str, data: list[dict]) -> None:
         ttl = getattr(settings, 'HISTORY_CACHE_TTL', 86400)
         redis.setex(cache_key, ttl, json.dumps(data))
+
+    @staticmethod
+    def _fetch_intraday_from_provider(symbol: str, bar_date: date) -> list[dict]:
+        """Fetch 1-min OHLCV bars for `bar_date` from the intraday provider chain.
+
+        Returns chart-format dicts (`time` is unix-seconds UTC), sorted
+        oldest→newest. Empty list on unsupported symbol, provider error, or no
+        data (e.g. yfinance only retains 1-min data for the last ~30 days).
+        """
+        try:
+            bars = fetch_intraday_from_chain(symbol, bar_date)
+        except ProviderError as exc:
+            logger.warning("intraday fetch failed for %s %s: %s", symbol, bar_date, exc)
+            return []
+
+        chart_bars = [
+            {
+                'time': int(bar.ts.timestamp()),
+                'open': bar.open,
+                'high': bar.high,
+                'low': bar.low,
+                'close': bar.close,
+                'volume': bar.volume or 0,
+            }
+            for bar in bars
+        ]
+        chart_bars.sort(key=lambda b: b['time'])
+        logger.info("intraday: %d bars for %s on %s", len(chart_bars), symbol, bar_date)
+        return chart_bars
+
+    @staticmethod
+    def _cache_intraday_to_redis(redis, symbol: str, bar_date: date, bars: list[dict]) -> None:
+        """Write chart-format bars into the same hash schema as `poll_live_quotes`.
+
+        Hash key: `price:<symbol>:1m:<bar_date>`. Field: `HH:MM` UTC. Value:
+        `{o,h,l,c,v}` JSON. 48h TTL matches the live poller.
+        """
+        if not bars:
+            return
+        from datetime import datetime, timezone
+        key = f'price:{symbol}:1m:{bar_date.isoformat()}'
+        mapping: dict[str, str] = {}
+        for b in bars:
+            slot = datetime.fromtimestamp(b['time'], tz=timezone.utc).strftime('%H:%M')
+            mapping[slot] = json.dumps({
+                'o': b['open'],
+                'h': b['high'],
+                'l': b['low'],
+                'c': b['close'],
+                'v': b.get('volume') or 0,
+            })
+        if mapping:
+            redis.hset(key, mapping=mapping)
+            redis.expire(key, 60 * 60 * 48)

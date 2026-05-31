@@ -91,6 +91,43 @@
             font-size: 0.9em;
             font-weight: bold;
         }
+        .market-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        .market-badge .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .market-badge.open    { background: #e8f5e9; color: #2e7d32; }
+        .market-badge.open    .dot { background: #4caf50; box-shadow: 0 0 0 3px rgba(76,175,80,0.2); }
+        .market-badge.extended { background: #fff8e1; color: #ef6c00; }
+        .market-badge.extended .dot { background: #ff9800; }
+        .market-badge.closed  { background: #fafafa; color: #757575; }
+        .market-badge.closed  .dot { background: #bdbdbd; }
+        .market-info {
+            margin-top: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 32px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .market-info > div { display: flex; flex-direction: column; gap: 2px; }
+        .market-info .label {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            color: #999;
+            letter-spacing: 0.04em;
+        }
+        .market-info .value { font-weight: 600; color: #333; }
         
         .daily-data-section {
             margin-top: 40px;
@@ -271,6 +308,37 @@
             <h1 class="fund-name">{{ fund.fund_name }}</h1>
             <span class="fund-type">{{ fund.fund_type }}</span>
             <span class="fund-currency">{{ fund.currency }}</span>
+            {% if market_status %}
+                {% if market_status.session == 'regular' %}
+                    <span class="market-badge open"><span class="dot"></span>Market Open</span>
+                {% elif market_status.session == 'extended' %}
+                    <span class="market-badge extended"><span class="dot"></span>Extended Hours</span>
+                {% else %}
+                    <span class="market-badge closed"><span class="dot"></span>Market Closed</span>
+                {% endif %}
+            {% endif %}
+
+            {% if market_status %}
+            <div class="market-info">
+                {% if last_daily %}
+                <div>
+                    <span class="label">Last Close</span>
+                    <span class="value">{{ last_daily.close|floatformat:4 }} <span style="color:#999;font-weight:400;">· {{ last_daily.date|date:"M j, Y" }}</span></span>
+                </div>
+                {% endif %}
+                {% if market_status.is_open and market_status.next_close_display %}
+                <div>
+                    <span class="label">Closes</span>
+                    <span class="value">{{ market_status.next_close_display }} {{ fund.market_timezone }}</span>
+                </div>
+                {% elif market_status.next_open_display %}
+                <div>
+                    <span class="label">Next Open</span>
+                    <span class="value">{{ market_status.next_open_display }} {{ fund.market_timezone }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
 
         <div class="info-grid">
@@ -389,6 +457,21 @@
 
     <script>
         const container = document.getElementById('historicalChart');
+        const marketTz = "{{ fund.market_timezone }}";
+
+        function fmtMarketTime(unixSec) {
+            return new Date(unixSec * 1000).toLocaleTimeString('en-US', {
+                timeZone: marketTz, hour: '2-digit', minute: '2-digit', hour12: false,
+            });
+        }
+        function fmtMarketDateTime(unixSec) {
+            return new Date(unixSec * 1000).toLocaleString('en-US', {
+                timeZone: marketTz,
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: false,
+            });
+        }
+
         const chart = LightweightCharts.createChart(container, {
             width: container.clientWidth,
             height: 400,
@@ -405,6 +488,12 @@
             timeScale: {
                 borderColor: 'rgba(0,0,0,0.1)',
                 timeVisible: false,
+                tickMarkFormatter: (time) =>
+                    typeof time === 'number' ? fmtMarketTime(time) : time,
+            },
+            localization: {
+                timeFormatter: (time) =>
+                    typeof time === 'number' ? fmtMarketDateTime(time) : time,
             },
         });
 
@@ -478,54 +567,120 @@
             chart.timeScale().setVisibleRange({ from, to: lastDateStr });
         }
 
-        // Fetch historical data from API
+        // Fetch and render chart data
         const symbol = "{{ fund.fund_code }}";
+        let currentRange = '3M';
+        let dailyData = null;  // cached daily data
 
-        fetch(`/info/${symbol}/history`)
-            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-            .then(payload => {
-                const data = payload.data;
-                if (!data || !data.length) {
-                    container.innerHTML = '<p style="padding:20px;color:#999;">No historical data available.</p>';
-                    return;
-                }
-                closeSeries.setData( data.map(d => ({ time: d.time, value: d.close  })));
-                navSeries.setData(   data.map(d => ({ time: d.time, value: d.nav    })));
-                volumeSeries.setData(data.map(d => ({ time: d.time, value: d.volume })));
-                chart.timeScale().fitContent();
+        function loadChart(rangeKey) {
+            currentRange = rangeKey;
+            document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.time-btn[data-range="${rangeKey}"]`).classList.add('active');
 
-                const lastEntry = data[data.length - 1];
-                const lastDate = new Date(lastEntry.time);
-                const lastDateStr = lastEntry.time;
+            const url = rangeKey === '1D'
+                ? `/info/${symbol}/intraday`
+                : `/info/${symbol}/history`;
 
-                document.querySelectorAll('.time-btn').forEach(btn => {
-                    btn.addEventListener('click', () => setRange(btn.dataset.range, lastDate, lastDateStr));
+            // For daily ranges, use cached data if available
+            if (rangeKey !== '1D' && dailyData) {
+                renderDaily(dailyData, rangeKey);
+                return;
+            }
+
+            fetch(url)
+                .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+                .then(payload => {
+                    const data = payload.data;
+                    if (!data || !data.length) {
+                        container.innerHTML = '<p style="padding:20px;color:#999;">No data available for this range.</p>';
+                        return;
+                    }
+                    if (rangeKey === '1D') {
+                        renderIntraday(data);
+                    } else {
+                        dailyData = data;
+                        renderDaily(data, rangeKey);
+                    }
+                })
+                .catch(err => {
+                    console.error('Chart data fetch failed:', err);
+                    container.innerHTML = '<p style="padding:20px;color:#f44336;">Failed to load chart data.</p>';
                 });
-                setRange('3M', lastDate, lastDateStr);
+        }
 
-                // Populate recent daily data table (10 most recent, newest first)
-                const recent = data.slice(-10).reverse();
-                const fmt = (v, d=4) => v != null ? Number(v).toFixed(d) : '-';
-                const fmtVol = v => v != null ? Number(v).toLocaleString() : '-';
-                const fmtDate = s => new Date(s + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
-                const tbody = document.getElementById('daily-data-tbody');
-                tbody.innerHTML = recent.map(d => `
-                    <tr>
-                        <td>${fmtDate(d.time)}</td>
-                        <td>${fmt(d.open)}</td>
-                        <td>${fmt(d.close)}</td>
-                        <td>${fmt(d.high)}</td>
-                        <td>${fmt(d.low)}</td>
-                        <td>${fmt(d.nav)}</td>
-                        <td>${fmtVol(d.volume)}</td>
-                    </tr>`).join('');
-            })
-            .catch(err => {
-                console.error('Chart data fetch failed:', err);
-                container.innerHTML = '<p style="padding:20px;color:#f44336;">Failed to load chart data.</p>';
-                document.getElementById('daily-data-tbody').innerHTML =
-                    '<tr><td colspan="7" style="text-align:center;color:#f44336;">Failed to load data.</td></tr>';
-            });
+        function renderIntraday(data) {
+            // Intraday: time is unix timestamp, show time axis
+            chart.applyOptions({ timeScale: { timeVisible: true, secondsVisible: false } });
+            closeSeries.setData(data.map(d => ({ time: d.time, value: d.close })));
+            navSeries.setData([]);  // no NAV for intraday
+            volumeSeries.setData(data.map(d => ({ time: d.time, value: d.volume || 0 })));
+            chart.timeScale().fitContent();
+            // Update table with intraday data (last 10 bars)
+            const recent = data.slice(-10).reverse();
+            const fmt = (v, d=4) => v != null ? Number(v).toFixed(d) : '-';
+            const fmtVol = v => v != null ? Number(v).toLocaleString() : '-';
+            const fmtTime = ts => fmtMarketTime(ts);
+            const tbody = document.getElementById('daily-data-tbody');
+            tbody.innerHTML = recent.map(d => `
+                <tr>
+                    <td>${fmtTime(d.time)}</td>
+                    <td>${fmt(d.open)}</td>
+                    <td>${fmt(d.close)}</td>
+                    <td>${fmt(d.high)}</td>
+                    <td>${fmt(d.low)}</td>
+                    <td>-</td>
+                    <td>${fmtVol(d.volume)}</td>
+                </tr>`).join('');
+        }
+
+        function renderDaily(data, rangeKey) {
+            // Daily: time is date string, hide time axis
+            chart.applyOptions({ timeScale: { timeVisible: false } });
+            closeSeries.setData(data.map(d => ({ time: d.time, value: d.close })));
+            navSeries.setData(data.map(d => ({ time: d.time, value: d.nav })));
+            volumeSeries.setData(data.map(d => ({ time: d.time, value: d.volume })));
+            chart.timeScale().fitContent();
+
+            // Set visible range based on rangeKey
+            const lastEntry = data[data.length - 1];
+            const lastDate = new Date(lastEntry.time);
+            const lastDateStr = lastEntry.time;
+            let from;
+            switch (rangeKey) {
+                case '5D':  from = shiftDate(lastDate, 0, 7);   break;
+                case '1M':  from = shiftDate(lastDate, 1);       break;
+                case '3M':  from = shiftDate(lastDate, 3);       break;
+                case 'YTD': from = `${lastDate.getFullYear()}-01-01`; break;
+                case '1Y':  from = shiftDate(lastDate, 12);      break;
+                default:    from = shiftDate(lastDate, 3);
+            }
+            chart.timeScale().setVisibleRange({ from, to: lastDateStr });
+
+            // Populate recent daily data table
+            const recent = data.slice(-10).reverse();
+            const fmt = (v, d=4) => v != null ? Number(v).toFixed(d) : '-';
+            const fmtVol = v => v != null ? Number(v).toLocaleString() : '-';
+            const fmtDate = s => new Date(s + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+            const tbody = document.getElementById('daily-data-tbody');
+            tbody.innerHTML = recent.map(d => `
+                <tr>
+                    <td>${fmtDate(d.time)}</td>
+                    <td>${fmt(d.open)}</td>
+                    <td>${fmt(d.close)}</td>
+                    <td>${fmt(d.high)}</td>
+                    <td>${fmt(d.low)}</td>
+                    <td>${fmt(d.nav)}</td>
+                    <td>${fmtVol(d.volume)}</td>
+                </tr>`).join('');
+        }
+
+        // Wire up time range buttons
+        document.querySelectorAll('.time-btn').forEach(btn => {
+            btn.addEventListener('click', () => loadChart(btn.dataset.range));
+        });
+
+        // Initial load
+        loadChart('3M');
     </script>
 </body>
 </html>

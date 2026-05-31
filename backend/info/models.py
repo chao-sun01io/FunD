@@ -8,6 +8,8 @@ class FundBasicInfo(models.Model):
     currency = models.CharField(max_length=10,default='CNY')  # Default to CNY, can be changed as needed
     # SH or SZ for China, NYSE or NASDAQ for US etc.
     listing_exchange = models.CharField(max_length=100)
+    # IANA name (e.g. 'America/New_York', 'Asia/Shanghai') — used to render intraday chart axes.
+    market_timezone = models.CharField(max_length=64, default='America/New_York')
     fund_company = models.CharField(max_length=100)
     inception_date = models.DateField()
     index_tracked = models.CharField(max_length=200, blank=True, null=True)

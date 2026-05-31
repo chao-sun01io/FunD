@@ -14,6 +14,30 @@ services:
     restart: unless-stopped
     mem_limit: 300m
 
+  celery:
+    build: ./backend
+    command: celery --app=config worker --loglevel=info --concurrency=2
+    env_file: ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 256m
+
+  celery-beat:
+    build: ./backend
+    command: celery --app=config beat --loglevel=info
+    env_file: ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 128m
+
   db:
     image: postgres:17-alpine
     volumes:
